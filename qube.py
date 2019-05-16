@@ -6,6 +6,7 @@ from astropy.modeling import models, fitting
 import matplotlib.pyplot as plt
 import astropy.units as u
 from astropy import constants as const
+from astropy.table import Table
 
 class Qube(object):
     
@@ -343,6 +344,38 @@ class Qube(object):
                 VelEnd[i, j] = VelArr[ChanRE[SNRargmax[i, j]]]
 
         return Mom0, SNRmax, VelStart, VelEnd
+
+    def save(self, fitsfile='./cube.fits'):
+
+        # save the cube as a fits file
+        Fit1 = fits.PrimaryHDU(self.data, header=self.header)
+
+        # now make numerous fixes to the beam array so it can be 
+        # read in using CASA
+        # renumber channels from 0 to number of channels
+        # fix for single beams
+        if self.beam['BMAJ'].size is 1:
+            self.beam['BMAJ'] = np.array([self.beam['BMAJ']])
+            self.beam['BMIN'] = np.array([self.beam['BMIN']])
+            self.beam['BPA'] = np.array([self.beam['BPA']])
+            self.beam['POL'] = np.array([self.beam['POL']])
+
+        Beam = Table([self.beam['BMAJ'] * 3600,
+                      self.beam['BMIN'] * 3600, 
+                      self.beam['BPA'], 
+                      np.arange(self.beam['CHAN'].size).astype('i4'), 
+                      self.beam['POL']], 
+                names=('BMAJ', 'BMIN', 'BPA', 'CHAN', 'POL'))
+        Beam['BMAJ'].unit ='arcsec'
+        Beam['BMIN'].unit ='arcsec'
+        Beam['BPA'].unit ='deg'
+        BeamHeader = fits.header.Header()
+        BeamHeader.extend((('NCHAN',self.beam['CHAN'].size),('NPOL',1)))
+        
+        
+        Fit2 = fits.BinTableHDU(Beam, name='BEAMS', header=BeamHeader, ver=1)
+        Fit = fits.HDUList([Fit1,Fit2])
+        Fit.writeto(fitsfile, overwrite=True)
 
     # some auxilliary calls for potentially useful information
     def _getvelocity_(self, convention='radio', channels=None):
