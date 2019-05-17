@@ -37,6 +37,10 @@ class Qube(object):
         
         return self
 
+    def __init__(self):
+        # Attributes
+        self.data = None
+
 
     def get_slice(self, xindex=None, yindex=None, zindex=None, **kwargs):
         
@@ -345,6 +349,19 @@ class Qube(object):
 
         return Mom0, SNRmax, VelStart, VelEnd
 
+    def get_spec1d(self):
+        """
+        Generate a 1D spectrum from the Cube
+
+        Returns:
+            np.ndarray, np.ndarray:  Velocity (km/s), Flux arrays
+        """
+        # Generate the arrays
+        Velocity = self._getvelocity_()
+        Flux = np.sum(np.sum(self.data, axis=1), axis=1)
+        # Return
+        return Velocity, Flux
+
     def save(self, fitsfile='./cube.fits'):
 
         # save the cube as a fits file
@@ -397,6 +414,9 @@ class Qube(object):
                     the frequency array/value is returned.
         channels:   If None then get velocities of the full array. If set,
                     only the velocities of those channels are returned.
+
+        Returns:
+            np.ndarray:  Velocity values in km/s
         """
 
         # get the channels/values to convert
