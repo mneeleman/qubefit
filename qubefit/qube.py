@@ -349,16 +349,23 @@ class Qube(object):
 
         return Mom0, SNRmax, VelStart, VelEnd
 
-    def get_spec1d(self):
+    def get_spec1d(self, spat_mask=None):
         """
         Generate a 1D spectrum from the Cube
+
+        Parameters:
+            spat_mask (np.ndarray, optional):  True means set value to 0
 
         Returns:
             np.ndarray, np.ndarray:  Velocity (km/s), Flux arrays
         """
+        data = self.data.copy()  # To enable masking
+        # Mask?
+        if spat_mask is not None:
+            data[:,spat_mask] = 0
         # Generate the arrays
         Velocity = self._getvelocity_()
-        Flux = np.sum(np.sum(self.data, axis=1), axis=1)
+        Flux = np.sum(np.sum(data, axis=1), axis=1)
         # Return
         return Velocity, Flux
 
