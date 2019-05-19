@@ -40,6 +40,7 @@ class Qube(object):
     def __init__(self):
         # Attributes
         self.data = None
+        self.header = None
 
 
     def get_slice(self, xindex=None, yindex=None, zindex=None, **kwargs):
@@ -357,7 +358,7 @@ class Qube(object):
             spat_mask (np.ndarray, optional):  True means set value to 0
 
         Returns:
-            np.ndarray, np.ndarray:  Velocity (km/s), Flux arrays
+            np.ndarray, np.ndarray, float:  Velocity (km/s), Flux arrays, Redshift for v=0
         """
         data = self.data.copy()  # To enable masking
         # Mask?
@@ -366,8 +367,9 @@ class Qube(object):
         # Generate the arrays
         Velocity = self._getvelocity_()
         Flux = np.sum(np.sum(data, axis=1), axis=1)
+        z = 1900.5369e9 / self.header['RESTFRQ'] - 1
         # Return
-        return Velocity, Flux
+        return Velocity, Flux, z
 
     def save(self, fitsfile='./cube.fits'):
 
