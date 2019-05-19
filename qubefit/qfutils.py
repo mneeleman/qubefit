@@ -29,13 +29,20 @@ class AnchoredEllipse(AnchoredOffsetbox):
         AnchoredOffsetbox.__init__(self, loc, pad=pad, borderpad=borderpad,
                                    child=self._box, prop=prop, frameon=frameon)
 
+def get_beam(Qube, scale=None, wcs=None):
+    """
+    Grab the beam from the header
 
-def qubebeam(Qube, ax, loc=3, pad=0.5, borderpad=0.4, frameon=True,
-             color='Darkslategray', alpha=1.0, wcs=None, prop=None,
-             scale=None, **kwargs):
+    Args:
+        Qube (Qube):
+        scale (float, optional):
+        wcs (WCS):
 
-    # Note: not set up to deal with different x,y, pixel scales
-    # scale the beam to the different axes
+    Returns:
+        np.ndarray, np.ndarray, np.ndarray:  width, height and angle of the beam
+          Default is in pixels but one can apply a scale
+    """
+    # Scale
     if scale is None:
         if wcs is not None:
             if hasattr(wcs.wcs, 'cd'):
@@ -47,10 +54,20 @@ def qubebeam(Qube, ax, loc=3, pad=0.5, borderpad=0.4, frameon=True,
             scale = np.abs(Qube.header["CDELT1"] / cdelt)
         else:
             scale = 1.
-
+    # Parse
     width = Qube.beam["BMAJ"] / Qube.header["CDELT1"] * scale
     height = Qube.beam["BMIN"] / Qube.header["CDELT1"] * scale
     angle = Qube.beam["BPA"]+90.
+
+    # Return
+    return width, height, angle
+
+def qubebeam(Qube, ax, loc=3, pad=0.5, borderpad=0.4, frameon=True,
+             color='Darkslategray', alpha=1.0, wcs=None, prop=None,
+             scale=None, **kwargs):
+
+    # Grab the Beam
+    width, height, angle = get_beam(Qube, scale=scale, wcs=wcs)
 
     # Note: not set up to deal with different x,y, pixel scales
     beam = AnchoredEllipse(ax.transData, width=width, height=height,
