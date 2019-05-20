@@ -350,12 +350,14 @@ class Qube(object):
 
         return Mom0, SNRmax, VelStart, VelEnd
 
-    def get_spec1d(self, spat_mask=None):
+    def get_spec1d(self, spat_mask=None, z=None):
         """
         Generate a 1D spectrum from the Cube
 
         Parameters:
             spat_mask (np.ndarray, optional):  True means set value to 0
+            z (float, optional): Redshift desired for the velocity array
+               Default is to use that of the Cube
 
         Returns:
             np.ndarray, np.ndarray, float:  Velocity (km/s), Flux arrays, Redshift for v=0
@@ -367,7 +369,13 @@ class Qube(object):
         # Generate the arrays
         Velocity = self._getvelocity_()
         Flux = np.sum(np.sum(data, axis=1), axis=1)
-        z = 1900.5369e9 / self.header['RESTFRQ'] - 1
+        zCube = 1900.5369e9 / self.header['RESTFRQ'] - 1
+        #
+        if z is None:
+            z = zCube
+        else: # Offset
+            dv = 3e5 * (z-zCube) / (1+z)
+            Velocity -= dv
         # Return
         return Velocity, Flux, z
 
