@@ -451,6 +451,9 @@ class Qube(object):
             FreqArr = RestFreq / (1 - Arr / const.c.value)
         elif self.header['CTYPE3'] == 'AWAV':
             FreqArr = (const.c / (Arr * u.AA)).to(u.Hz)
+        elif self.header['CTYPE3'] == 'VOPT':
+            Velocity = u.Quantity(Arr, unit=self.header['CUNIT3']).to('km/s').value
+            return Velocity
         else:
             raise ValueError(self.header['CTYPE3'])
 
