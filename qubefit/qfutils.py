@@ -244,6 +244,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
 
 def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
                       channels=None, ncols=4, vrange=None, vscale=None,
+                      show=True,
                       pdfname=None, cbarlabel=None, cmap='RdYlBu_r', **kwargs):
 
     """ Running this function will create a quick channel map of the Qube.
@@ -268,6 +269,9 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
     cbarlabel:  if set, label of the color bar
     cmap:       colormap to use for the plotting
     pdfname:    if set, the name of the pdf file to which the image was saved
+
+    Returns:
+        fig
     """
 
     # generate a temporary qube from the data
@@ -344,8 +348,12 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
 
     if pdfname is not None:
         plt.savefig(pdfname, format='pdf', dpi=300)
-    else:
+    elif show:
         plt.show()
+    else:
+        pass
+
+    return fig
 
 
 def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
