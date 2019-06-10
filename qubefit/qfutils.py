@@ -124,6 +124,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
     beam:       if true will draw the beam of the observation
     text:       optional text to be added to the figure
     textprop:   dictionary of the properties of the text
+    textposition:    Position of the text box (1=upper right)
     cross:      if set will draw a cross at the position given [x, y]
     crosssize:  size of the cross in units of the X and Y axis
     pdfname:    if set, the name of the PDF file (only works with newplot=True)
@@ -224,8 +225,9 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
         if type(textprop) is dict:
             textprop = [textprop]
 
+        #from IPython import embed; embed()
         for txt, prop, pos in zip(text, textprop, textposition):
-            at = AnchoredText(txt, prop=prop, frameon=True, loc=pos)
+            at = AnchoredText(txt, pos, prop=prop, frameon=True)
             at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
             ax.add_artist(at)
 
@@ -244,8 +246,8 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
 
 def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
                       channels=None, ncols=4, vrange=None, vscale=None,
-                      show=True,
-                      pdfname=None, cbarlabel=None, cmap='RdYlBu_r', **kwargs):
+                      show=True, pdfname=None, cbarlabel=None, cmap='RdYlBu_r',
+                      **kwargs):
 
     """ Running this function will create a quick channel map of the Qube.
     One can either plot the contours or the raster image or both. This program
@@ -332,7 +334,7 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
         standardfig(raster=rasterimage, contour=contourimage, clevels=clevel,
                     newplot=False, fig=fig, ax=grid[idx], cbar=False,
                     beam=beambool, vrange=vrange, text=[VelStr], cmap=cmap,
-                    textprop=[dict(size=12)], textposition=[1], **kwargs)
+                    **kwargs)
 
     # now do the color bar
     norm = mpl.colors.Normalize(vmin=vrange[0], vmax=vrange[1])
@@ -353,7 +355,7 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
     else:
         pass
 
-    return fig
+    return fig, grid, channels
 
 
 def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
