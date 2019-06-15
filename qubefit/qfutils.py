@@ -95,7 +95,8 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
                 cbar=False, cbaraxis=None, cbarlabel=None, vscale=None,
                 tickint=5.0, clevels=None, ccolor='black', beam=True,
                 text=None, textprop=[dict(size=12)], textposition=[1],
-                cross=None, crosssize=1., pdfname=None, **kwargs):
+                cross=None, crosssize=1., pdfname=None, pltrange=None,
+                **kwargs):
 
     """ This will make a standard figure of a 2D data set, it can be used to
     either draw contours or filled images only or both. It can be used as a
@@ -128,6 +129,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
     cross:      if set will draw a cross at the position given [x, y]
     crosssize:  size of the cross in units of the X and Y axis
     pdfname:    if set, the name of the PDF file (only works with newplot=True)
+    pltrange:
     """
 
     # check if new plot needs to be generated
@@ -156,7 +158,8 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
         if origin is None:
             origin = [(raster.data.shape[0]-1) // 2,
                       (raster.data.shape[0]-1) // 2]
-        pltrange = get_pltposrange(origin, raster.data.shape, scale)
+        if pltrange is None:
+            pltrange = get_pltposrange(origin, raster.data.shape, scale)
 
         # define the z-axis range
         if vrange is None:
