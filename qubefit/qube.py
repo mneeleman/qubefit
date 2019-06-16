@@ -235,6 +235,18 @@ class Qube(object):
             return Mask
 
     def calculate_moment(self, moment=0, channels=None, restfreq=None):
+        """
+        What are the units that come out??
+
+        Args:
+            moment:
+            channels:
+            restfreq:
+
+        Returns:
+            Qube:
+
+        """
 
         # init
         mom = copy.deepcopy(self)
