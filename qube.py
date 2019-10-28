@@ -7,24 +7,27 @@ import matplotlib.pyplot as plt
 import astropy.units as u
 from astropy import constants as const
 from astropy.table import Table
+from scipy.ndimage.interpolation import rotate
+from astropy.stats import sigma_clip
+
 
 class Qube(object):
-    
-    """ Class for the (hopefully) easy handeling of a variety of data cubes 
+
+    """Class for the (hopefully) easy handeling of a variety of data cubes
     primarily tested for sub-mm. In particular, CASA and AIPS fits files can
     be treated in a similar manner.
     """
-    
+
     @classmethod
     def from_fits(cls, fitsfile, extension=0, **kwargs):
-        
-        """ Read in a fits file. This is the primary way to load in a data 
-        cube. 
+
+        """ Read in a fits file. This is the primary way to load in a data
+        cube.
         """
 
         # initiate (currently blank)
         self = cls(**kwargs)
-        
+
         # Open the file
         hdu = fits.open(fitsfile)
         self.data = np.squeeze(hdu[extension].data)
@@ -34,43 +37,43 @@ class Qube(object):
 
         # adapt the header depending on the instrument and reduction software
         self.__instr_redux__(hdu)
-        
+
         return self
 
-
     def get_slice(self, xindex=None, yindex=None, zindex=None, **kwargs):
-        
-        """ slice the data cube into smaller data cubes, this will update the 
+
+        """ slice the data cube into smaller data cubes, this will update the
         header correctly.
         """
 
         # init
         Slice = copy.deepcopy(self)
-        
+
         # deal with unassigned indices and tuple values
         if xindex is None:
             xindex = np.arange(Slice.data.shape[-1])
         elif type(xindex) is tuple:
-            xindex = np.arange(xindex[0],xindex[1])
+            xindex = np.arange(xindex[0], xindex[1])
         if yindex is None:
             yindex = np.arange(Slice.data.shape[-2])
         elif type(yindex) is tuple:
-            yindex = np.arange(yindex[0],yindex[1])
+            yindex = np.arange(yindex[0], yindex[1])
         # third axis only if it exists
         if Slice.data.ndim >= 3 and zindex is None:
             zindex = np.arange(Slice.data.shape[-3])
         elif type(zindex) is tuple:
-            zindex = np.arange(zindex[0],zindex[1])
-        
+            zindex = np.arange(zindex[0], zindex[1])
+
         # crop the data
         if Slice.data.ndim == 2:
-            Slice.data = Slice.data[yindex[:,np.newaxis],xindex[np.newaxis,:]]
+            Slice.data = Slice.data[yindex[:, np.newaxis],
+                                    xindex[np.newaxis, :]]
         elif Slice.data.ndim == 3:
-            Slice.data = Slice.data[zindex[:,np.newaxis,np.newaxis],
-                                    yindex[np.newaxis,:,np.newaxis],
-                                    xindex[np.newaxis,np.newaxis,:]]
+            Slice.data = Slice.data[zindex[:, np.newaxis, np.newaxis],
+                                    yindex[np.newaxis, :, np.newaxis],
+                                    xindex[np.newaxis, np.newaxis, :]]
         else:
-            raise ValueError('Cannot crop data with this dimension - yet') 
+            raise ValueError('Cannot crop data with this dimension - yet')
 
         # squeeze if needed
         Slice.data = np.squeeze(Slice.data)
@@ -81,127 +84,124 @@ class Qube(object):
         if Slice.data.ndim >= 3:
             Slice.header['CRPIX3'] = Slice.header['CRPIX3'] - np.min(zindex)
 
-        
         # adjust the header and beam
         Slice.shape = Slice.data.shape
         Slice.__fix_header__()
         Slice.__fix_beam__(channels=zindex)
-        
-        return Slice
 
+        return Slice
 
     def calculate_sigma(self, ignorezero=True, fullarray=False, channels=None,
                         **kwargs):
-        
-        """ This function will fit a Gaussian to the data and return the 
+
+        """ This function will fit a Gaussian to the data and return the
         sigma value. For multiple channels it will do the calculation for each
         channel and return an array of sigma values.
         """
-        
+
         # either 2D or 3D case
         if self.data.ndim == 2:
-            
+
             # parse the data to be fitted
             Data = self.data
             if ignorezero:
                 Data = Data[np.where(Data != 0)]
-                
+
             # fit the data
             g = __fit_gaussian__(Data, **kwargs)
 
             # get sigma
             Sigma = g.stddev.value
-            
+
         elif self.data.ndim == 3:
-            
+
             # channels to loop over
             if channels is None:
-                channels = np.arange(0,self.data.shape[-3])
+                channels = np.arange(0, self.data.shape[-3])
 
             Sigma = []
             for channel in channels:
-                Data = self.data[channel,:,:]
-                
+                Data = self.data[channel, :, :]
+
                 if ignorezero:
                     Data = Data[np.where(Data != 0)]
-                
+
                 # fit the data
                 g = __fit_gaussian__(Data, **kwargs)
-                
+
                 # get sigma
                 Sigma.append(g.stddev.value)
-                
+
             # convert to numpy array
             Sigma = np.array(Sigma)
 
         # convert sigma to a full array the size of the original data
         # and upgrade it to a full Qube
         if fullarray:
-            
+
             TSigma = copy.deepcopy(self)
             if Sigma.shape != self.data.shape[-3]:
-                TSigma = self.get_slice(zindex=channels) 
+                TSigma = self.get_slice(zindex=channels)
             else:
                 TSigma = copy.deepcopy(self)
             TSigma.data = np.tile(Sigma[:, np.newaxis, np.newaxis],
-                                (1, self.data.shape[-2], self.data.shape[-1]))
+                                  (1, self.data.shape[-2],
+                                   self.data.shape[-1]))
             Sigma = TSigma
-        
+
         return Sigma
-    
-    
-    def mask_region(self, ellipse=None, rectangle=None, value=None, 
+
+    def mask_region(self, ellipse=None, rectangle=None, value=None,
                     moment=None, channels=None, mask=None, applymask=True):
-        
+
         """ This function will mask the data cube.
         """
-        
+
         # init
         MaskRegion = copy.deepcopy(self)
         Mask = np.ones_like(MaskRegion.data)
-        
 
-        if ellipse is not None: # Ellipse Region: [xcntr,ycntr,rmaj,rmin,angle]
+        if ellipse is not None:  # Ellipse Reg.: [xcntr,ycntr,rmaj,rmin,angle]
             # create indices array
             tidx = np.indices(MaskRegion.data.shape)
-            
+
             # translate
-            tidx[-1,:] = tidx[-1,:] - ellipse[0]
-            tidx[-2,:] = tidx[-2,:] - ellipse[1]
+            tidx[-1, :] = tidx[-1, :] - ellipse[0]
+            tidx[-2, :] = tidx[-2, :] - ellipse[1]
 
             # rotate
             angle = (90 + ellipse[4]) * np.pi / 180.
-            rmaj = tidx[-1,:]*np.cos(angle) + tidx[-2,:]*np.sin(angle)
-            rmin = tidx[-2,:]*np.cos(angle) - tidx[-1,:]*np.sin(angle)
+            rmaj = tidx[-1, :] * np.cos(angle) + tidx[-2, :] * np.sin(angle)
+            rmin = tidx[-2, :] * np.cos(angle) - tidx[-1, :] * np.sin(angle)
 
             # find pixels within ellipse and mask
-            size=np.array([ellipse[2],ellipse[3]])
-            tmask = np.where(((rmaj/size[0])**2+(rmin/size[1])**2) <= 1,
+            size = np.array([ellipse[2], ellipse[3]])
+            tmask = np.where(((rmaj / size[0])**2 + (rmin / size[1])**2) <= 1,
                              1, np.nan)
             Mask = Mask * tmask
-            
-        if rectangle is not None: # rectangular region
+
+        if rectangle is not None:  # rectangular region
             # create indices array
             tidx = np.indices(MaskRegion.data.shape)
-            
-            tmask = np.where((tidx[-1,:] >= rectangle[0]-rectangle[2]) &
-                             (tidx[-1,:] <= rectangle[0]+rectangle[2]) &
-                             (tidx[-2,:] >= rectangle[1]-rectangle[3]) &
-                             (tidx[-2,:] <= rectangle[1]+rectangle[3]))
-            
+
+            tmask = np.where((tidx[-1, :] >= rectangle[0] - rectangle[2]) &
+                             (tidx[-1, :] <= rectangle[0] + rectangle[2]) &
+                             (tidx[-2, :] >= rectangle[1] - rectangle[3]) &
+                             (tidx[-2, :] <= rectangle[1] + rectangle[3]))
+
             Mask = Mask * tmask
 
-        if value is not None: # reject values below this value
-            if (type(value) is float or type(value) is int or 
-                type(value) is np.float64):
-                tval = np.full(MaskRegion.data.shape,value)
-            else: # assume list
+        if value is not None:  # reject values below this value
+            if (type(value) is float or type(value) is int or
+                    type(value) is np.float64):
+                tval = np.full(MaskRegion.data.shape, value)
+            else:  # assume list
                 tval = np.zeros(MaskRegion.data.shape)
                 for chan in np.arange(MaskRegion.data.shape[0]):
-                    tval[chan,:,:] = value[chan]
-                
+                    tval[chan, :, :] = value[chan]
+
             tmask = np.where(MaskRegion.data >= tval, 1, np.nan)
-            
+
             Mask = Mask * tmask
 
         if moment is not None:
@@ -345,36 +345,189 @@ class Qube(object):
 
         return Mom0, SNRmax, VelStart, VelEnd
 
+    def extract_spec(self, convention='radio', continuumcorrect=False,
+                     **kwargs):
+
+        # sum up the pixels in each channel
+        if self.data.ndim == 2:
+            spec = np.nansum(self.data)
+        if self.data.ndim == 3:
+            spec = np.nansum(np.nansum(self.data, axis=1), axis=1)
+
+        # find the beam size (in pixels)
+        beam_area = ((self.beam['BMAJ'] * self.beam['BMIN'] * np.pi) /
+                     (4 * np.log(2)))
+        beam_pix = beam_area / (np.abs(self.header['CDELT1'] *
+                                self.header['CDELT2']))
+
+        # divide by the number of pixels per beam to get flux density
+        spec = spec / beam_pix
+
+        # deal with the 'velocity' array (or freq, etc).
+        if self.data.ndim == 2:
+            vel = self.header['RESTFRQ']
+        if self.data.ndim == 3:
+            vel = self._getvelocity_(convention=convention)
+
+        # apply correction for potential continuum emission
+        if continuumcorrect:
+            spec = __correct_flux__(spec, vel, **kwargs)
+
+        return spec, vel
+
+    def bootstrap_sigma(self, mask, nboot=500, asymmetric=False,
+                        gaussian=True, **kwargs):
+
+        """calculate the typical sigma for the cube by moving a mask around
+        randomly
+        """
+
+        # recast a 2d array into 3d
+        if self.data.ndim == 2:
+            shape = (1,) + self.data.shape
+        else:
+            shape = self.data.shape
+
+        # generate the random shift of the masks
+        newx = (np.random.randint(shape[-1]/2, size=nboot) -
+                shape[-1]/4).astype(int)
+        newy = (np.random.randint(shape[-2]/2, size=nboot) -
+                shape[-2]/4).astype(int)
+
+        # calculate the flux for each masked region
+        SpecArr = np.zeros((shape[-3], nboot))
+        for nx, ny, ii in zip(newx, newy, np.arange(nboot)):
+            print(ii/nboot)
+            NewMask = np.roll(mask, (nx, ny), axis=(-2, -1))
+            CubeNewMask = self.mask_region(mask=NewMask)
+            NewSpec, _NewVel = CubeNewMask.extract_spec()
+            SpecArr[:, ii] = NewSpec
+
+        # calculate the uncertainty (asymmetric, gaussian, other)
+        if asymmetric:
+            raise NotImplementedError('Would give you assymetric errors')
+
+        elif gaussian:
+            std = np.zeros(shape[-3])
+            for ii in np.arange(shape[-3]):
+                fitgauss = __fit_gaussian__(SpecArr[ii, :], **kwargs)
+                std[ii] = fitgauss.stddev.value
+
+            return std
+
+        else:
+            return np.std(SpecArr, axis=1)
+
+    def pvdiagram(self, PA, center, width=1., vshift=0.0, convention='radio',
+                  scale=1.):
+
+        """This is a direct port of the code in mncube. It will take a qube
+        and create a 2D image with position along the axis and velocity on the
+        second axis. It uses scipy's 'rotate' to rotate the datacube along the
+        axis defined by the PA and center and then extracts the total flux
+        along the 'slit' with a width given by the width keyword. The final
+        2D output has been flipped (if needed) to have the velocity increasing
+        upward and the extent of the pvdata is returned.
+
+        NOTE: Rotate introduces a problem in that it does not conserve the
+        total flux of a cube when rotated.
+
+        Inputs for the function are:
+
+        qube:       the data qube to use.
+        PA:         position angle of the axis used to generate the PV diagram
+        center:     the center of rotation.
+        width:      2*width+1 is the size of the box used for extraction
+        vshift:     shift in velocity for all values (w.r.t. the 'Restfrq'
+                    of the qube).
+        convention: convention to used for frequency-velocity conversion the
+                    default is 'radio'.
+        scale:      scale used for the pixels (x and y). default is 1.
+
+        The function returns
+        position:   vector of values (scaled) of the position along the axis
+        velocity:   vector of values (in km/s) of the velocity of the
+                    observations
+        extent:     extent of the pv data (to use with the extent keyword of
+                    matplotlib.pyplot.imshow)
+        pvdata:     2D array of the pv diagram
+        """
+
+        # init
+        data = copy.deepcopy(self)
+
+        # rotate using spline interpolation
+        PA = PA + 90.       # change to x-axis def. (rotate clockwise)
+        # need to change NaN into real numbers (zeroes) (Scipy v0.19.1)
+        data.data = np.nan_to_num(data.data)
+        data.data = rotate(data.data, PA, (1, 2))
+
+        # position of the center of rotation w.r.t. the middle of the data cube
+        Middle = (np.array([data.shape[2], data.shape[1]]) - 1) / 2.
+        Center = center - Middle
+        
+        # position of middle of the rotated data cube
+        RotMiddle = (np.array([data.data.shape[2],
+                               data.data.shape[1]]) - 1) / 2.
+
+        # position of the center in the rotated datacube
+        PArad = PA * np.pi / 180.
+        RotCenter = [(Center[0] * np.cos(PArad) + Center[1] *
+                      np.sin(PArad) + RotMiddle[0]),
+                     (-1 * Center[0] * np.sin(PArad) + Center[1] *
+                      np.cos(PArad) + RotMiddle[1])]
+
+        # extract a pv slice along the y-axis (along the slit)
+        box = [int(round(RotCenter[1]) - width // 2),
+               int(round(RotCenter[1]) + width // 2 + 1)]
+        data.data = data.data[:, box[0]:box[1], :]
+        pvarray = np.nanmean(data.data, axis=1)
+
+        # axes vectors
+        pixposition = np.arange(pvarray.shape[1]) - RotCenter[0]
+        position = pixposition * scale
+        velocity = data._getvelocity_(convention=convention) - vshift
+        if velocity[0] > velocity[1]:
+            pvarray = np.flipud(pvarray)
+            velocity = np.flip(velocity, axis=0)
+
+        # extent of the pvdata
+        dv = np.mean(velocity[1:] - velocity[:-1])
+        extent = ((pixposition[0] - 0.5) * scale,
+                  (pixposition[np.size(pixposition) - 1] + 0.5) * scale,
+                  velocity[0] - dv, velocity[np.size(velocity) - 1] + dv)
+
+        return position, velocity, extent, pvarray
+
     def save(self, fitsfile='./cube.fits'):
 
         # save the cube as a fits file
         Fit1 = fits.PrimaryHDU(self.data, header=self.header)
 
-        # now make numerous fixes to the beam array so it can be 
+        # now make numerous fixes to the beam array so it can be
         # read in using CASA
         # renumber channels from 0 to number of channels
         # fix for single beams
-        if self.beam['BMAJ'].size is 1:
+        if self.beam['BMAJ'].size == 1:
             self.beam['BMAJ'] = np.array([self.beam['BMAJ']])
             self.beam['BMIN'] = np.array([self.beam['BMIN']])
             self.beam['BPA'] = np.array([self.beam['BPA']])
             self.beam['POL'] = np.array([self.beam['POL']])
 
         Beam = Table([self.beam['BMAJ'] * 3600,
-                      self.beam['BMIN'] * 3600, 
-                      self.beam['BPA'], 
-                      np.arange(self.beam['CHAN'].size).astype('i4'), 
-                      self.beam['POL']], 
-                names=('BMAJ', 'BMIN', 'BPA', 'CHAN', 'POL'))
-        Beam['BMAJ'].unit ='arcsec'
-        Beam['BMIN'].unit ='arcsec'
-        Beam['BPA'].unit ='deg'
+                      self.beam['BMIN'] * 3600,
+                      self.beam['BPA'],
+                      np.arange(self.beam['CHAN'].size).astype('i4'),
+                      self.beam['POL']],
+                     names=('BMAJ', 'BMIN', 'BPA', 'CHAN', 'POL'))
+        Beam['BMAJ'].unit = 'arcsec'
+        Beam['BMIN'].unit = 'arcsec'
+        Beam['BPA'].unit = 'deg'
         BeamHeader = fits.header.Header()
-        BeamHeader.extend((('NCHAN',self.beam['CHAN'].size),('NPOL',1)))
-        
-        
+        BeamHeader.extend((('NCHAN', self.beam['CHAN'].size), ('NPOL', 1)))
+
         Fit2 = fits.BinTableHDU(Beam, name='BEAMS', header=BeamHeader, ver=1)
-        Fit = fits.HDUList([Fit1,Fit2])
+        Fit = fits.HDUList([Fit1, Fit2])
         Fit.writeto(fitsfile, overwrite=True)
 
     # some auxilliary calls for potentially useful information
@@ -418,16 +571,16 @@ class Qube(object):
             raise ValueError(self.header['CTYPE3'])
 
         # now convert the FreqArr into a 'velocity'
-        if convention is 'radio':
+        if convention == 'radio':
             Freq2Vel = u.doppler_radio(RestFreq)
             Velocity = FreqArr.to(u.km / u.s, equivalencies=Freq2Vel).value
-        elif convention is 'optical':
+        elif convention == 'optical':
             Freq2Vel = u.doppler_optical(RestFreq)
             Velocity = FreqArr.to(u.km / u.s, equivalencies=Freq2Vel).value
-        elif convention is 'relativistic':
+        elif convention == 'relativistic':
             Freq2Vel = u.doppler_relativistic(RestFreq)
             Velocity = FreqArr.to(u.km / u.s, equivalencies=Freq2Vel).value
-        elif convention is 'frequency':
+        elif convention == 'frequency':
             Velocity = FreqArr.value
         else:
             raise ValueError('Doppler convention is not defined')
@@ -575,7 +728,8 @@ def __fit_gaussian__(data, doguess=True, bins=None, gausspar=None,
     # decicde on the range and the bins
     if doguess:
         gausspar = [0., np.mean(data), np.std(data)]
-        bins = np.linspace(-5*gausspar[2], 5*gausspar[2], 101)
+        nbins = np.min([np.sqrt(len(data)).astype(int), 101])
+        bins = np.linspace(-5*gausspar[2], 5*gausspar[2], nbins)
     else:
         if bins is None or gausspar is None:
             raise ValueError('Please set the bin range and/or approximate' +
@@ -614,3 +768,18 @@ def __make_sigplot__(sigma, xval, hist, g, bins):
              transform=ax.transAxes)
     plt.legend(loc=1)
     plt.show()
+
+
+def __correct_flux__(flux, vel, limits):
+
+    # fit the spectrum for potential continuum residual
+    # (second order polynomial)
+
+    finit = models.Polynomial1D(2, c0=0, c1=0, c2=0)
+    fitter = fitting.LevMarLSQFitter()
+    ofitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=3,
+                                                sigma=3.0)
+    FitIdx = (vel < limits[0]) + (vel > limits[1])
+    OFitData, OFit = ofitter(finit, vel[FitIdx], flux[FitIdx])
+
+    return flux - OFit(vel)

@@ -16,14 +16,14 @@ from copy import deepcopy as dc
 class AnchoredEllipse(AnchoredOffsetbox):
     def __init__(self, transform, width, height, angle, loc,
                  pad=0.1, borderpad=0.1, prop=None, frameon=True,
-                 color='White', alpha=1.0, **kwargs):
+                 facecolor='White', alpha=1.0, **kwargs):
         """
         Draw an ellipse the size in data coordinate of the give axes.
         pad, borderpad in fraction of the legend font size (or prop)
         """
         self._box = AuxTransformBox(transform)
         self.ellipse = (Ellipse((0, 0), width, height, angle,
-                        color=color, alpha=alpha, **kwargs))
+                        facecolor=facecolor, alpha=alpha, **kwargs))
         self._box.add_artist(self.ellipse)
 
         AnchoredOffsetbox.__init__(self, loc, pad=pad, borderpad=borderpad,
@@ -31,7 +31,7 @@ class AnchoredEllipse(AnchoredOffsetbox):
 
 
 def qubebeam(Qube, ax, loc=3, pad=0.5, borderpad=0.4, frameon=True,
-             color='Darkslategray', alpha=1.0, wcs=None, prop=None,
+             facecolor='Darkslategray', alpha=1.0, wcs=None, prop=None,
              scale=None, **kwargs):
 
     # Note: not set up to deal with different x,y, pixel scales
@@ -55,7 +55,7 @@ def qubebeam(Qube, ax, loc=3, pad=0.5, borderpad=0.4, frameon=True,
     # Note: not set up to deal with different x,y, pixel scales
     beam = AnchoredEllipse(ax.transData, width=width, height=height,
                            angle=angle, loc=loc, pad=pad, borderpad=borderpad,
-                           frameon=frameon, color=color, alpha=alpha,
+                           frameon=frameon, facecolor=facecolor, alpha=alpha,
                            prop=prop, **kwargs)
 
     return beam
@@ -78,7 +78,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
                 cbar=False, cbaraxis=None, cbarlabel=None, vscale=None,
                 tickint=5.0, clevels=None, ccolor='black', beam=True,
                 text=None, textprop=[dict(size=12)], textposition=[1],
-                cross=None, crosssize=1., pdfname=None, **kwargs):
+                cross=None, crosssize=1., pdfname=None):
 
     """ This will make a standard figure of a 2D data set, it can be used to
     either draw contours or filled images only or both. It can be used as a
@@ -155,9 +155,9 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
 
             if cbaraxis is not None:
                 norm = mpl.colors.Normalize(vmin=vrange[0], vmax=vrange[1])
+                cmapo = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
                 ticks = np.arange(-10, 10) * vscale
-                cbr = mpl.colorbar.ColorbarBase(cbaraxis, ticks=ticks,
-                                                cmap=cmap, norm=norm)
+                cbr = plt.colorbar(cmapo, cax=cbaraxis, ticks=ticks)
             else:
                 cbr = fig.colorbar(im, ticks=np.arange(-10, 10) * vscale,
                                    ax=ax)
@@ -196,7 +196,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
             raise ValueError('To draw a beam something has to be drawn')
 
         ax.add_artist(qubebeam(data, ax, scale=scale, loc=3, pad=0.3,
-                               fill=None, hatch='////', color='black'))
+                               fill=None, hatch='////', edgecolor='black'))
 
     # optional text
     if text is not None:
@@ -208,7 +208,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
             textprop = [textprop]
 
         for txt, prop, pos in zip(text, textprop, textposition):
-            at = AnchoredText(txt, prop=prop, frameon=True, loc=pos)
+            at = AnchoredText(txt, pos, prop=prop, frameon=True)
             at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
             ax.add_artist(at)
 
@@ -284,7 +284,7 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
         VelStr = str(int(round(VelArr[chan]))) + ' km s$^{-1}$'
 
         # get the boolean of the beam (bottom left figure only)
-        if (idx % ncols is 0) and (idx // ncols is int(nrows) - 1):
+        if (idx % ncols == 0) and (idx // ncols == int(nrows) - 1):
             beambool = True
         else:
             beambool = False
@@ -315,11 +315,11 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
 
     # now do the color bar
     norm = mpl.colors.Normalize(vmin=vrange[0], vmax=vrange[1])
+    cmapo = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     if vscale is None:
         vscale = (vrange[1] - vrange[0]) / 5.
-    cbr = mpl.colorbar.ColorbarBase(grid.cbar_axes[0],
-                                    ticks=np.arange(-10, 10) * vscale,
-                                    cmap=cmap, norm=norm)
+    cbr = plt.colorbar(cmapo, cax=grid.cbar_axes[0],
+                       ticks=np.arange(-10, 10) * vscale)
 
     # label of color bar
     if cbarlabel is not None:
@@ -407,7 +407,7 @@ def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
                 conversion = 1.
             # units.append(model.initpar[key]['Unit'].to_string())
             # quick fix for IO
-            if key is 'I0':
+            if key == 'I0':
                 Chain[:, idx] = Chain[:, idx]*1E3
 
             Chain[:, idx] = Chain[:, idx] * conversion
@@ -473,18 +473,19 @@ def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
                     **kwargs)
         standardfig(raster=mMom0, contour=mMom0, clevels=clevels, ax=grid[1],
                     fig=fig, vrange=vrangemom, cmap=cmap0, beam=False,
-                    text='Model', **kwargs)
+                    text='Model', textprop=[dict(size=12)], **kwargs)
         standardfig(raster=rMom0, contour=rMom0, clevels=clevels, ax=grid[2],
                     fig=fig, vrange=vrangemom, cmap=cmap0, text='Residual',
-                    **kwargs)
+                    textprop=[dict(size=12)], **kwargs)
         standardfig(raster=dMom0, contour=rMom0, clevels=clevels, ax=grid[3],
                     fig=fig, vrange=vrangemom, cmap=cmap0,
-                    text='Data with residual contours', **kwargs)
+                    text='Data with residual contours',
+                    textprop=[dict(size=12)], **kwargs)
 
         # plot the color bar
         norm = mpl.colors.Normalize(vmin=vrangemom[0], vmax=vrangemom[1])
-        cbr = mpl.colorbar.ColorbarBase(grid.cbar_axes[0], cmap=cmap0,
-                                        norm=norm)
+        cmapo = plt.cm.ScalarMappable(cmap=cmap0, norm=norm)
+        cbr = plt.colorbar(cmapo, cax=grid.cbar_axes[0])
         cbr.ax.set_ylabel('Moment-0', labelpad=-1)
 
         plt.savefig(outname + '_moment0.pdf', format='pdf', dpi=300)
@@ -504,15 +505,18 @@ def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
         # plot the figures
         vrangemom1 = [np.nanmin(dMom1.data), np.nanmax(dMom1.data)]
         standardfig(raster=dMom1, ax=grid[0], fig=fig, cmap=cmap1,
-                    vrange=vrangemom1, text='Data', **kwargs)
+                    vrange=vrangemom1, text='Data',
+                    textprop=[dict(size=12)], **kwargs)
         standardfig(raster=mMom1, ax=grid[1], fig=fig, cmap=cmap1,
-                    vrange=vrangemom1, beam=False, text='Model', **kwargs)
+                    vrange=vrangemom1, beam=False, text='Model',
+                    textprop=[dict(size=12)], **kwargs)
 
         # plot the color bar
         norm = mpl.colors.Normalize(vmin=vrangemom1[0], vmax=vrangemom1[1])
-        cbr = mpl.colorbar.ColorbarBase(grid.cbar_axes[0], cmap=cmap1,
-                                        norm=norm)
+        cmapo = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
+        cbr = plt.colorbar(cmapo, cax=grid.cbar_axes[0])
         cbr.ax.set_ylabel('Moment-1', labelpad=-1)
+
         plt.savefig(outname + '_moment1.pdf', format='pdf', dpi=300)
         plt.close()
 

@@ -1,5 +1,6 @@
 # modules
 import numpy as np
+from scipy.special import erf
 import emcee
 from progressbar import Bar, AdaptiveETA, Percentage, ProgressBar
 from astropy.convolution import convolve, Gaussian1DKernel, Gaussian2DKernel
@@ -253,7 +254,7 @@ class QubeFit(Qube):
         burninvalue = int(np.ceil(chain.shape[1]*burnin))
 
         # sigma ranges
-        perc = (1 / 2 + 1 / 2 * np.erf(np.arange(-3, 4, 1) / np.sqrt(2))) * 100
+        perc = (1 / 2 + 1 / 2 * erf(np.arange(-3, 4, 1) / np.sqrt(2))) * 100
 
         # find the index with the highest probability
         BestValIdx = np.unravel_index(chain[:, :, -1].argmax(),
