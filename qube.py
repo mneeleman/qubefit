@@ -126,11 +126,12 @@ class Qube(object):
                 if ignorezero:
                     Data = Data[np.where(Data != 0)]
 
-                # fit the data
-                g = __fit_gaussian__(Data, **kwargs)
-
-                # get sigma
-                Sigma.append(g.stddev.value)
+                # fit the data and get sigma
+                if Data != []:
+                    g = __fit_gaussian__(Data, **kwargs)
+                    Sigma.append(g.stddev.value)
+                else:
+                    Sigma.append(0)
 
             # convert to numpy array
             Sigma = np.array(Sigma)
@@ -465,7 +466,7 @@ class Qube(object):
         # position of the center of rotation w.r.t. the middle of the data cube
         Middle = (np.array([data.shape[2], data.shape[1]]) - 1) / 2.
         Center = center - Middle
-        
+
         # position of middle of the rotated data cube
         RotMiddle = (np.array([data.data.shape[2],
                                data.data.shape[1]]) - 1) / 2.
