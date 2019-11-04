@@ -90,7 +90,8 @@ def ThickDisk(**kwargs):
     VArr = np.indices(V4DArr.shape)[0]
 
     # create big array
-    FullArr = I4DArr * np.exp(np.square(VArr - V4DArr)(-2 * np.square(D4DArr)))
+    FullArr = (I4DArr * np.exp(np.square(VArr - V4DArr) /
+                                   (-2 * np.square(D4DArr))))
 
     # collapse big array along z-axis and swap columns (z,x,y -> z,y,x)
     Model = np.nansum(FullArr, axis=3)
