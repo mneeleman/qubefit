@@ -12,7 +12,6 @@ from astropy.stats import sigma_clip
 
 
 class Qube(object):
-
     """Class for the (hopefully) easy handeling of a variety of data cubes
     primarily tested for sub-mm. In particular, CASA and AIPS fits files can
     be treated in a similar manner.
