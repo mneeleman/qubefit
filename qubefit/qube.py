@@ -640,9 +640,15 @@ class Qube(object):
                 self.__AIPSfix__()
             else:
                 self.instr = 'EVLA_CASA'
+
         elif self.header['TELESCOP'] == 'Hale5m':
             self.instr = 'PCWI_IDL'
             self.__CWIfix__()
+
+        elif self.header['TELESCOP'] == 'Keck II':
+            self.instr = 'KCWI'
+            self.__KCWIfix__()
+
         else:
             raise ValueError('Instrument not supported yet.')
 
@@ -708,6 +714,24 @@ class Qube(object):
                 if 'BPA' not in self.header:
                     self.header.insert('History',
                                        ('BPA', float(line.split()[7])))
+
+
+        def __KCWIfix__(self):
+
+            # add RESTFRQ keyword to the header
+            restfreq = const.c .value / (self.header['RESTWAV'] * 1E-10)
+            self.header.set('RESTFRQ', restfreq)
+
+            #  add CDELT3 keyword and convert values to frequency
+            cdelt3 = self.header['CD3_3']
+            self.header.set('CDELT3', cdelt3)
+
+            # add some 'fake' beam parameters these should be first
+            # updated to the seeing values of the 
+            self.header.set('BMAJ', 1.0 / 3600.)
+            self.header.set('BMIN', 1.0 / 3600.)
+            self.header.set('BPA',  0.0)
+
 
     def __get_velocitywidth__(self, **kwargs):
 
