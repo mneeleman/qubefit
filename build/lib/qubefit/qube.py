@@ -12,6 +12,7 @@ from astropy.stats import sigma_clip
 
 
 class Qube(object):
+
     """Class for the (hopefully) easy handeling of a variety of data cubes
     primarily tested for sub-mm. In particular, CASA and AIPS fits files can
     be treated in a similar manner.
@@ -38,11 +39,6 @@ class Qube(object):
         self.__instr_redux__(hdu)
 
         return self
-
-    def __init__(self):
-        # Attributes
-        self.data = None
-        self.header = None
 
     def get_slice(self, xindex=None, yindex=None, zindex=None, **kwargs):
 
@@ -235,18 +231,6 @@ class Qube(object):
             return Mask
 
     def calculate_moment(self, moment=0, channels=None, restfreq=None):
-        """
-        What are the units that come out??
-
-        Args:
-            moment:
-            channels:
-            restfreq:
-
-        Returns:
-            Qube:
-
-        """
 
         # init
         mom = copy.deepcopy(self)
@@ -362,30 +346,8 @@ class Qube(object):
 
         return Mom0, SNRmax, VelStart, VelEnd
 
-    def get_spec1d(self, convention='radio', continuumcorrect=False,
-                   limits=None, beamcorrect=True, **kwargs):
-
-        """
-        Generate a 1D spectrum from the Cube
-
-        Parameters:
-            convention: (String | 'Radio') Which Doppler convention to use
-            to calculate the velocities.
-
-            continuumcorrect: (Bool | False) Will correct the spectrum for any
-            potential continuum flux by fitting a second order polynomial to
-            the spectrum outside the channels given by limits.
-
-            limits: (tuple | None) Two-element tuple which contains
-            the limits outside which the continuum can be fit.
-
-            beamcorrect: (Bool | False) Correct the flux by dividing by the
-            area of the beam. This should be the default when dealing with
-            interferometric data in Jy/beam.
-
-        Returns:
-            np.ndarray, np.ndarray: Summed flux and 'Velocity'
-        """
+    def extract_spec(self, convention='radio', continuumcorrect=False,
+                     **kwargs):
 
         # sum up the pixels in each channel
         if self.data.ndim == 2:
@@ -393,14 +355,14 @@ class Qube(object):
         if self.data.ndim == 3:
             spec = np.nansum(np.nansum(self.data, axis=1), axis=1)
 
+        # find the beam size (in pixels)
+        beam_area = ((self.beam['BMAJ'] * self.beam['BMIN'] * np.pi) /
+                     (4 * np.log(2)))
+        beam_pix = beam_area / (np.abs(self.header['CDELT1'] *
+                                self.header['CDELT2']))
+
         # divide by the number of pixels per beam to get flux density
-        if beamcorrect:
-            # find the beam size (in pixels)
-            beam_area = ((self.beam['BMAJ'] * self.beam['BMIN'] * np.pi) /
-                         (4 * np.log(2)))
-            beam_pix = beam_area / (np.abs(self.header['CDELT1'] *
-                                           self.header['CDELT2']))
-            spec = spec / beam_pix
+        spec = spec / beam_pix
 
         # deal with the 'velocity' array (or freq, etc).
         if self.data.ndim == 2:
@@ -410,9 +372,7 @@ class Qube(object):
 
         # apply correction for potential continuum emission
         if continuumcorrect:
-            if limits is None:
-                raise ValueError('Please set the limits keyword!')
-            spec = __correct_flux__(spec, vel, limits)
+            spec = __correct_flux__(spec, vel, **kwargs)
 
         return spec, vel
 
@@ -441,7 +401,7 @@ class Qube(object):
             print(ii/nboot)
             NewMask = np.roll(mask, (nx, ny), axis=(-2, -1))
             CubeNewMask = self.mask_region(mask=NewMask)
-            NewSpec, _NewVel = CubeNewMask.get_spec1d()
+            NewSpec, _NewVel = CubeNewMask.extract_spec()
             SpecArr[:, ii] = NewSpec
 
         # calculate the uncertainty (asymmetric, gaussian, other)
@@ -591,9 +551,6 @@ class Qube(object):
                     the frequency array/value is returned.
         channels:   If None then get velocities of the full array. If set,
                     only the velocities of those channels are returned.
-
-        Returns:
-            np.ndarray:  Velocity values in km/s
         """
 
         # get the channels/values to convert
@@ -611,9 +568,6 @@ class Qube(object):
             FreqArr = RestFreq / (1 - Arr / const.c.value)
         elif self.header['CTYPE3'] == 'AWAV':
             FreqArr = (const.c / (Arr * u.AA)).to(u.Hz)
-        elif self.header['CTYPE3'] == 'VOPT':
-            Velocity = u.Quantity(Arr, unit=self.header['CUNIT3']).to('km/s').value
-            return Velocity
         else:
             raise ValueError(self.header['CTYPE3'])
 

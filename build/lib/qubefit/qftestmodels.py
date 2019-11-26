@@ -3,9 +3,8 @@
 import numpy as np
 from astropy.io import fits
 import astropy.units as u
-
-from qfmodels import *
-from qubefit import QubeFit
+from qubefit.qfmodels import *
+from qubefit.qubefit import QubeFit
 
 
 def load_testcube():
@@ -93,7 +92,7 @@ def kwargs_twospheres():
               'I02': {'Value': 2.0E-3, 'Unit': u.Jy / u.beam, 'Fixed': False,
                       'Conversion': None,
                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 1E-2},
-              'Rd2': {'Value': 0.8, 'Unit': u.kpc, 'Fixed': False,
+              'Rd2': {'Value': 0.4, 'Unit': u.kpc, 'Fixed': False,
                       'Conversion': (0.2 * u.kpc) / (1 * u.pix),
                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 5},
               'Vcen2': {'Value': 7.0, 'Unit': u.pix, 'Fixed': False,
@@ -102,6 +101,64 @@ def kwargs_twospheres():
               'Disp2': {'Value': 100.0, 'Unit': u.km/u.s, 'Fixed': False,
                         'Conversion': (37.86 * u.km / u.s) / (1 * u.pix),
                         'Dist': 'uniform', 'Dloc': 0, 'Dscale': 200}
+              }
+
+    return kwargs
+
+
+def kwargs_spiralgalaxy():
+
+    kwargs = {'Xcen': {'Value': 20.0, 'Unit': u.pix, 'Fixed': False,
+                       'Conversion': None,
+                       'Dist': 'uniform', 'Dloc': 20, 'Dscale': 20},
+              'Ycen': {'Value': 25.0, 'Unit': u.pix, 'Fixed': False,
+                       'Conversion': None,
+                       'Dist': 'uniform', 'Dloc': 10, 'Dscale': 20},
+              'Incl': {'Value': 30.0, 'Unit': u.deg, 'Fixed': False,
+                       'Conversion': (180 * u.deg) / (np.pi * u.rad),
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 90},
+              'PA': {'Value': 45.0, 'Unit': u.deg, 'Fixed': False,
+                     'Conversion': (180 * u.deg) / (np.pi * u.rad),
+                     'Dist': 'uniform', 'Dloc': 0, 'Dscale': 360},
+              'I0': {'Value': 8.0E-3, 'Unit': u.Jy / u.beam, 'Fixed': False,
+                     'Conversion': None,
+                     'Dist': 'uniform', 'Dloc': 0, 'Dscale': 1E-1},
+              'Rd': {'Value': 1.0, 'Unit': u.kpc, 'Fixed': False,
+                     'Conversion': (0.2 * u.kpc) / (1 * u.pix),
+                     'Dist': 'uniform', 'Dloc': 0, 'Dscale': 5},
+              'Rv': {'Value': 1.0, 'Unit': u.kpc, 'Fixed': True,  # not used
+                     'Conversion': (0.2 * u.kpc) / (1 * u.pix),
+                     'Dist': 'uniform', 'Dloc': 0, 'Dscale': 5},
+              'Zf': {'Value': 0.15, 'Unit': None, 'Fixed': True,  # fixed
+                     'Conversion': None,
+                     'Dist': 'uniform', 'Dloc': 0, 'Dscale': 5},
+              'Vmax': {'Value': 150.0, 'Unit': u.km / u.s, 'Fixed': False,
+                       'Conversion': (37.86 * u.km / u.s) / (1 * u.pix),
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 1000},
+              'Vcen': {'Value': 7.0, 'Unit': u.pix, 'Fixed': False,
+                       'Conversion': None,
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 20},
+              'Disp': {'Value': 40.0, 'Unit': u.km / u.s, 'Fixed': False,
+                       'Conversion': (37.86 * u.km / u.s) / (1 * u.pix),
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 200},
+              'Nspiral': {'Value': 2, 'Unit': None, 'Fixed': True,  # fixed
+                          'Conversion': None,
+                          'Dist': 'uniform', 'Dloc': 0, 'Dscale': 0},
+              'Phi0': {'Value': 225.0, 'Unit': u.deg, 'Fixed': False,
+                       'Conversion': (180 * u.deg) / (np.pi * u.rad),
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 360},
+              'Spcoef': {'Value': 0.2, 'Unit': None, 'Fixed': False,
+                         'Conversion': None,
+                         'Dist': 'uniform', 'Dloc': -5, 'Dscale': 10},
+              'Dphi': {'Value': 10.0, 'Unit': u.deg, 'Fixed': True,  # fixed
+                       'Conversion': (180 * u.deg) / (np.pi * u.rad),
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 360},
+              'Ispf': {'Value': 0.8, 'Unit': None, 'Fixed': False,
+                       'Conversion': None,
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 1E-1},
+              'Rs': {'Value': 3.0, 'Unit': u.kpc, 'Fixed': False,
+                     'Conversion': (0.2 * u.kpc) / (1 * u.pix),
+                     'Dist': 'uniform', 'Dloc': 0, 'Dscale': 5},
               }
 
     return kwargs
@@ -141,5 +198,26 @@ def test_twospheres():
     Tcube.dispersionprofile = [['Constant', None, None],
                                ['Constant', None, None]]
     Tcube.create_model()
+
+    return Tcube
+
+
+def test_spiralgalaxy():
+
+    Tcube = load_testcube()
+
+    # create the gaussian kernel
+    Tcube.create_gaussiankernel(channels=[10], LSFSigma=0.1)
+
+    # load the parameters
+    Tcube.load_initialparameters(kwargs_spiralgalaxy())
+
+    # create the model
+    Tcube.modelname = 'SpiralGalaxy'
+    Tcube.intensityprofile = ['Exponential', None, 'Exponential']
+    Tcube.velocityprofile = ['Constant', None, None]
+    Tcube.dispersionprofile = ['Constant', None, None]
+
+    Tcube.create_model(convolve=False)
 
     return Tcube
