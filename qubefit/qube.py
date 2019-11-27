@@ -716,21 +716,21 @@ class Qube(object):
                                        ('BPA', float(line.split()[7])))
 
 
-        def __KCWIfix__(self):
+    def __KCWIfix__(self):
 
-            # add RESTFRQ keyword to the header
-            restfreq = const.c .value / (self.header['RESTWAV'] * 1E-10)
-            self.header.set('RESTFRQ', restfreq)
+        # add RESTFRQ keyword to the header
+        restfreq = const.c .value / (self.header['RESTWAV'] * 1E-10)
+        self.header.set('RESTFRQ', restfreq)
 
-            #  add CDELT3 keyword and convert values to frequency
-            cdelt3 = self.header['CD3_3']
-            self.header.set('CDELT3', cdelt3)
+        #  add CDELT3 keyword and convert values to frequency
+        cdelt3 = self.header['CD3_3']
+        self.header.set('CDELT3', cdelt3)
 
-            # add some 'fake' beam parameters these should be first
-            # updated to the seeing values of the 
-            self.header.set('BMAJ', 1.0 / 3600.)
-            self.header.set('BMIN', 1.0 / 3600.)
-            self.header.set('BPA',  0.0)
+        # add some 'fake' beam parameters these should be first
+        # updated to the seeing values of the data.
+        self.header.set('BMAJ', 1.0 / 3600.)
+        self.header.set('BMIN', 1.0 / 3600.)
+        self.header.set('BPA',  0.0)
 
 
     def __get_velocitywidth__(self, **kwargs):
