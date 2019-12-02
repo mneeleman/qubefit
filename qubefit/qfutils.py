@@ -30,12 +30,19 @@ class AnchoredEllipse(AnchoredOffsetbox):
                                    child=self._box, prop=prop, frameon=frameon)
 
 
-def qubebeam(Qube, ax, loc=3, pad=0.5, borderpad=0.4, frameon=True,
-             facecolor='Darkslategray', alpha=1.0, wcs=None, prop=None,
-             scale=None, **kwargs):
+def get_beam(Qube, scale=None, wcs=None):
+    """
+    Grab the beam from the header
 
-    # Note: not set up to deal with different x,y, pixel scales
-    # scale the beam to the different axes
+    Args:
+        Qube (Qube):
+        scale (float, optional):
+        wcs (WCS):
+    Returns:
+        np.ndarray, np.ndarray, np.ndarray:  width, height and angle of the
+        beam. Default is in pixels but one can apply a scale
+    """
+    # Scale
     if scale is None:
         if wcs is not None:
             if hasattr(wcs.wcs, 'cd'):
@@ -47,15 +54,26 @@ def qubebeam(Qube, ax, loc=3, pad=0.5, borderpad=0.4, frameon=True,
             scale = np.abs(Qube.header["CDELT1"] / cdelt)
         else:
             scale = 1.
-
+    # Parse
     width = Qube.beam["BMAJ"] / Qube.header["CDELT1"] * scale
     height = Qube.beam["BMIN"] / Qube.header["CDELT1"] * scale
     angle = Qube.beam["BPA"]+90.
 
+    # Return
+    return width, height, angle
+
+
+def qubebeam(Qube, ax, loc=3, pad=0.5, borderpad=0.4, frameon=True,
+             color='Darkslategray', alpha=1.0, wcs=None, prop=None,
+             scale=None, **kwargs):
+
+    # Grab the Beam
+    width, height, angle = get_beam(Qube, scale=scale, wcs=wcs)
+
     # Note: not set up to deal with different x,y, pixel scales
     beam = AnchoredEllipse(ax.transData, width=width, height=height,
                            angle=angle, loc=loc, pad=pad, borderpad=borderpad,
-                           frameon=frameon, facecolor=facecolor, alpha=alpha,
+                           frameon=frameon, facecolor=color, alpha=alpha,
                            prop=prop, **kwargs)
 
     return beam
@@ -78,7 +96,8 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
                 cbar=False, cbaraxis=None, cbarlabel=None, vscale=None,
                 tickint=5.0, clevels=None, ccolor='black', beam=True,
                 text=None, textprop=[dict(size=12)], textposition=[1],
-                cross=None, crosssize=1., pdfname=None):
+                cross=None, crosssize=1., pdfname=None, pltrange=None,
+                **kwargs):
 
     """ This will make a standard figure of a 2D data set, it can be used to
     either draw contours or filled images only or both. It can be used as a
@@ -107,9 +126,11 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
     beam:       if true will draw the beam of the observation
     text:       optional text to be added to the figure
     textprop:   dictionary of the properties of the text
+    textposition:    Position of the text box (1=upper right)
     cross:      if set will draw a cross at the position given [x, y]
     crosssize:  size of the cross in units of the X and Y axis
     pdfname:    if set, the name of the PDF file (only works with newplot=True)
+    pltrange:
     """
 
     # check if new plot needs to be generated
@@ -138,7 +159,8 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
         if origin is None:
             origin = [(raster.data.shape[0]-1) // 2,
                       (raster.data.shape[0]-1) // 2]
-        pltrange = get_pltposrange(origin, raster.data.shape, scale)
+        if pltrange is None:
+            pltrange = get_pltposrange(origin, raster.data.shape, scale)
 
         # define the z-axis range
         if vrange is None:
@@ -227,7 +249,8 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
 
 def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
                       channels=None, ncols=4, vrange=None, vscale=None,
-                      pdfname=None, cbarlabel=None, cmap='RdYlBu_r', **kwargs):
+                      show=True, pdfname=None, cbarlabel=None, cmap='RdYlBu_r',
+                      **kwargs):
 
     """ Running this function will create a quick channel map of the Qube.
     One can either plot the contours or the raster image or both. This program
@@ -251,6 +274,9 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
     cbarlabel:  if set, label of the color bar
     cmap:       colormap to use for the plotting
     pdfname:    if set, the name of the pdf file to which the image was saved
+
+    Returns:
+        fig
     """
 
     # generate a temporary qube from the data
@@ -311,7 +337,7 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
         standardfig(raster=rasterimage, contour=contourimage, clevels=clevel,
                     newplot=False, fig=fig, ax=grid[idx], cbar=False,
                     beam=beambool, vrange=vrange, text=[VelStr], cmap=cmap,
-                    textprop=[dict(size=12)], textposition=[1], **kwargs)
+                    **kwargs)
 
     # now do the color bar
     norm = mpl.colors.Normalize(vmin=vrange[0], vmax=vrange[1])
@@ -327,8 +353,12 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
 
     if pdfname is not None:
         plt.savefig(pdfname, format='pdf', dpi=300)
-    else:
+    elif show:
         plt.show()
+    else:
+        pass
+
+    return fig, grid, channels
 
 
 def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,

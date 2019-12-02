@@ -111,7 +111,7 @@ def test_dispersionsphere():
 
     Tcube = load_testcube()
 
-i    # create the gaussian kernel
+    # create the gaussian kernel
     Tcube.create_gaussiankernel(channels=[10], LSFSigma=0.1)
 
     # load the parameters
