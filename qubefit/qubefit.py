@@ -336,8 +336,7 @@ class QubeFit(Qube):
         variancesample = variance[np.where(self.maskarray)]
 
         # calculate the chi-squared value
-        chisq = np.sum(np.square(residualsample) / variancesample +
-                       np.log(2 * np.pi * variancesample))
+        chisq = np.sum(np.square(residualsample) / variancesample)
         if adjust_for_kernel:
             Nyquist = self.kernelarea * np.log(2) / 4
             chisq = chisq / Nyquist
@@ -354,7 +353,7 @@ class QubeFit(Qube):
 
     def create_maskarray(self, sampling=2., bootstrapsamples=200,
                          method='ChiSq', mask=None, regular=None,
-                         sigma=None, nblobs=1, fmaskgrow=0.1):
+                         sigma=None, nblobs=1, fmaskgrow=0.01):
 
         """ This will generate the mask array. It should only be done
         once so that the mask does not change between runs of the MCMC
