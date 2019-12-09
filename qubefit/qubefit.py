@@ -307,26 +307,53 @@ class QubeFit(Qube):
         for key in parameters.keys():
             self.par[key] = parameters[key]
 
-    def calculate_probability(self):
+    def calculate_chisquared(self, reduced=True, adjust_for_kernel=True):
 
-        """ this will calculate a goodness-of-fit either a KS test or
-        reduced chi-squared
+        """ this will calculate the (reduced) chi-squared statistic for
+        the given model, data and pre-defined mask.
+
+        keywords:
+        ---------
+        reduced (Bool|default: True):
+            Will calculate the reduced chi-squared statistic of the model
+
+        adjust_for_kernel: (Bool|default: True):
+            Will adjust the mask for the size of the kernel. This should be
+            set to False if the mask is set up to sparsely sample the data set,
+            which is the case in (most) bootstrap sampling techniques and with
+            sampling/regular masks.
         """
 
         # generate a bootstraparray (if needed)
         if not hasattr(self, 'maskarray'):
-            self.__create_maskarray__()
+            raise ValueError('Need to define a mask for calculating the' +
+                             'likelihood function')
 
-        # get the dictionary needed to get the probability
-        kwargs = self.__define_kwargs__()
+        # get the residual and variance
+        residual = self.data - self.model
+        variance = self.variance
+        residualsample = residual[np.where(self.maskarray)]
+        variancesample = variance[np.where(self.maskarray)]
 
-        # calculate the probability with __ln_prob__()
-        pval = __lnprob__(self.mcmcpar,  **kwargs)
+        # calculate the chi-squared value
+        chisq = np.sum(np.square(residualsample) / variancesample +
+                       np.log(2 * np.pi * variancesample))
+        if adjust_for_kernel:
+            Nyquist = self.kernelarea * np.log(2) / 4
+            chisq = chisq / Nyquist
 
-        return pval
+        if reduced:
+            if adjust_for_kernel:
+                IndSamples = len(residualsample) / Nyquist
+            else:
+                IndSamples = len(residualsample)
+            dof = IndSamples - len(self.mcmcpar)
+            chisq = chisq / dof
+
+        return chisq
 
     def create_maskarray(self, sampling=2., bootstrapsamples=200,
-                         method='BootChiSq', mask=None, regular=None,
+                         method='ChiSq', mask=None, regular=None,
                          sigma=None, nblobs=1, fmaskgrow=0.1):
 
         """ This will generate the mask array. It should only be done
@@ -422,6 +449,25 @@ class QubeFit(Qube):
         else:
             raise ValueError('qubefit: Probability method is not defined: ' +
                              '{}'.format(method))
+
+    def __calculate_loglikelihood__(self):
+
+        """ wrapper function to calculate the log likelihood of the model over
+        the given mask and the defined likelihood/probability method.
+        """
+
+        # generate a mask array (if not defined)
+        if not hasattr(self, 'maskarray'):
+            raise ValueError('Need to define a mask for calculating the' +
+                             'likelihood function')
+
+        # get the dictionary needed to get the probability
+        kwargs = self.__define_kwargs__()
+
+        # calculate the probability with __ln_prob__()
+        lnlike = __lnprob__(self.mcmcpar,  **kwargs)
+
+        return lnlike
 
     def __define_kwargs__(self):
 
@@ -583,14 +629,8 @@ def __get_lnprob__(residual, **kwargs):
                            np.log(2 * np.pi * variancesample))
             Nyquist = kwargs['kernelarea'] * np.log(2) / 4
             lnprob = -0.5 * chisq / Nyquist
-        elif kwargs['probmethod'] == 'RedChiSq':
-            # chisq = np.sum(np.square(residualsample) / variancesample)
-            chisq = np.sum(np.square(residualsample) / variancesample +
-                           np.log(2 * np.pi * variancesample))
-            dof = len(residualsample) - len(kwargs['mcmcpar'])
-            lnprob = -0.5 * chisq / dof
         else:
-            raise ValueError('Bootstrap method not defined.')
+            raise ValueError('Probability method not defined.')
 
         return lnprob
 
