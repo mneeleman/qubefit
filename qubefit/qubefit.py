@@ -13,7 +13,7 @@ from qubefit.qfmodels import *
 class QubeFit(Qube):
 
     def __init__(self, modelname='ThinDisk',
-                 intensityprofile=['Exponential', None, 'Delta'],
+                 intensityprofile=['Exponential', None, 'Exponential'],
                  velocityprofile=['Constant', None, None],
                  dispersionprofile=['Constant', None, None]):
 

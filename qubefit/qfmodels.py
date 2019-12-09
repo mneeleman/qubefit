@@ -17,7 +17,10 @@ def ThinDisk(**kwargs):
 
     """ This will create a 'thin disk' model from the stored parameters
     specified in kwargs. Variables that should be defined are: 'Xcen', 'Ycen',
-    'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Disp'.
+    'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Disp' (optionally one can also
+    define an index for the functions if a range of functions is needed, e.g.,
+    Sersic profiles for intensity.). Curretly only the IntensityIndex (IIdx)
+    is defined.
     """
 
     # get the polar coordinates in the plane of the sky (non-prime) and
@@ -27,8 +30,13 @@ def ThinDisk(**kwargs):
     # get the radial, velocity, and dispersion maps (these are 2D in
     # the plane of the sky)
     # note that VMap is based on the "sky angle" (Phi)
-    IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-            (RPrime, kwargs['par']['Rd']) * kwargs['par']['I0'])
+    if 'IIdx' in kwargs['par'].keys():
+        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                (RPrime, kwargs['par']['Rd'], kwargs['par']['IIdx']) *
+                kwargs['par']['I0'])
+    else:
+        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                (RPrime, kwargs['par']['Rd']) * kwargs['par']['I0'])
     VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
             (RPrime, kwargs['par']['Rv']) * kwargs['par']['Vmax'])
     VMap = __get_centralvelocity__(Phi, VDep, **kwargs)
@@ -91,7 +99,7 @@ def ThickDisk(**kwargs):
 
     # create big array
     FullArr = (I4DArr * np.exp(np.square(VArr - V4DArr) /
-                                   (-2 * np.square(D4DArr))))
+                               (-2 * np.square(D4DArr))))
 
     # collapse big array along z-axis and swap columns (z,x,y -> z,y,x)
     Model = np.nansum(FullArr, axis=3)
@@ -264,6 +272,72 @@ def JetSphere(Convolve=True, **kwargs):
     return Model
 
 
+def SpiralGalaxy(Convolve=True, **kwargs):
+
+    """ This is a model of a thick disk galaxy that contains spiral arms.
+    """
+
+    # get the cylindrical coordinates in the plane of the disk.
+    rhoArray, phiArray, zArray = __getarray__(**kwargs)
+
+    # disk profile (in rho and z)
+    IM1 = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+           (rhoArray, kwargs['par']['Rd']))
+
+    #  spiral arm density profile
+    IM2 = 0
+    for idx in np.arange(kwargs['par']['Nspiral']):
+        # find the starting phi at R=0
+        CPhi0 = (kwargs['par']['Phi0'] +
+                 (2 * np.pi) / kwargs['par']['Nspiral'] * idx)
+        CPhi = CPhi0 + kwargs['par']['Spcoef'] * rhoArray
+        CPhi = np.mod(CPhi, 2 * np.pi)
+        CPhi[np.where(CPhi > np.pi)] -= 2 * np.pi
+        IM2 += np.exp(-0.5 * (phiArray - CPhi)**2 / kwargs['par']['Dphi']**2)
+
+    IM2 *= kwargs['par']['Ispf']
+    IM2 *= eval('_Step_')(rhoArray, kwargs['par']['Rs'])
+
+    # add the disk and the spiral arm structure and mux by the z-profile
+    IMap = IM1 + IM2
+    IMap = (IMap * eval('_' + kwargs['mstring']['intensityprofile'][2] + '_')
+            (np.abs(zArray), kwargs['par']['Zf'] * kwargs['par']['Rd']) *
+            kwargs['par']['I0'])
+
+    # velocity map (3D)
+    # note that VMap is based on a modified "sky PA" (Phi)
+    # if is the sky angle for each slice at high z
+    VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
+            (rhoArray, kwargs['par']['Rd']) * kwargs['par']['Vmax'])
+    Phi = __sudophi_array__(**kwargs)
+    VMap = __get_centralvelocity__(Phi, VDep, **kwargs)
+
+    # dispersion map
+    DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
+            (rhoArray, kwargs['par']['Rd']) * kwargs['par']['Disp'])
+
+    # now make 4D arrays from these
+    I4DArr = np.tile(IMap, (kwargs['shape'][-3], 1, 1, 1))
+    V4DArr = np.tile(VMap, (kwargs['shape'][-3], 1, 1, 1))
+    D4DArr = np.tile(DMap, (kwargs['shape'][-3], 1, 1, 1))
+
+    # the 4D velocity array
+    VArr = np.indices(V4DArr.shape)[0]
+
+    # create big array
+    FullArr = (I4DArr * np.exp(np.square(VArr - V4DArr) /
+                               (-2 * np.square(D4DArr))))
+
+    # collapse big array along z-axis and swap columns (z,x,y -> z,y,x)
+    Model = np.nansum(FullArr, axis=3)
+    Model = np.swapaxes(Model, 1, 2)
+
+    # Convolve
+    if kwargs['convolve']:
+        Model = convolve(Model, kwargs['kernel'])
+
+    return Model
+
 ##############################################################
 # Available profiles for Intensity, Velocity, and Dispersion #
 
@@ -294,6 +368,23 @@ def _Power_(X, X0, power=-0.5):
 def _Atan_(X, X0):
 
     return (2. / np.pi) * np.arctan(X / X0)
+
+
+def _Delta_(X, X0):  # not recommended to use this profile
+
+    Arr = np.zeros_like(X)
+    Arr[np.where(X == X0)] = 1
+
+    return Arr
+
+def _Sersic_(X,X0,N):
+
+    return np.exp(-(2.*N-(1./3.))*(((X/X0)**N)-1))
+
+def _Sech2_(X,X0):
+
+    return (1. / np.cos(-1. * X / X0))**2
+
 
 ##############################################################
 
@@ -426,12 +517,12 @@ def __getarray__(rotate=True, representation='Cylindrical', **kwargs):
         CarRep = CarRep.transform(rm(np.pi/2, axis='z', unit=u.rad))
 
     # the representation to use and the return values
-    if representation is 'Cartesian':
+    if representation == 'Cartesian':
         return CarRep.x.value, CarRep.y.value, CarRep.z.value
-    elif representation is 'Cylindrical':
+    elif representation == 'Cylindrical':
         Rep = CylindricalRepresentation.from_cartesian(CarRep)
         return Rep.rho.value, Rep.phi.value, Rep.z.value
-    elif representation is 'Spherical':
+    elif representation == 'Spherical':
         Rep = SphericalRepresentation.from_cartesian(CarRep)
         return Rep.distance.value, Rep.lon.value, Rep.lat.value
 
