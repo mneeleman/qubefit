@@ -581,7 +581,7 @@ def __get_lnprob__(residual, **kwargs):
             # chisq = np.sum(np.square(residualsample) / variancesample)
             chisq = np.sum(np.square(residualsample) / variancesample +
                            np.log(2 * np.pi * variancesample))
-            Nyquist = kwargs['kernelarea'] * np.ln(2) / 4
+            Nyquist = kwargs['kernelarea'] * np.log(2) / 4
             lnprob = -0.5 * chisq / Nyquist
         elif kwargs['probmethod'] == 'RedChiSq':
             # chisq = np.sum(np.square(residualsample) / variancesample)
