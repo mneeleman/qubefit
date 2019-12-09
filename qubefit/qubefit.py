@@ -5,6 +5,7 @@ import emcee
 from progressbar import Bar, AdaptiveETA, Percentage, ProgressBar
 from astropy.convolution import convolve, Gaussian1DKernel, Gaussian2DKernel
 from scipy.stats import norm, uniform, kstest
+from skimage import measure
 from qubefit.qube import Qube
 from qubefit.qfmodels import *
 
@@ -14,8 +15,7 @@ class QubeFit(Qube):
     def __init__(self, modelname='ThinDisk',
                  intensityprofile=['Exponential', None, 'Delta'],
                  velocityprofile=['Constant', None, None],
-                 dispersionprofile=['Constant', None, None],
-                 nbootstrapsamples=500):
+                 dispersionprofile=['Constant', None, None]):
 
         """ initiate with the characteristics of the wanted model. Current
         choices are:
@@ -30,7 +30,6 @@ class QubeFit(Qube):
         self.intensityprofile = intensityprofile
         self.velocityprofile = velocityprofile
         self.dispersionprofile = dispersionprofile
-        self.nbootstrapsamples = nbootstrapsamples
 
     def create_gaussiankernel(self, channels=None, LSFSigma=None,
                               kernelsize=4):
@@ -159,8 +158,8 @@ class QubeFit(Qube):
         self.create_model()
 
         # create the bootstrap array (do not redo if already done)
-        if not hasattr(self, 'bootstraparray'):
-            self.__create_bootstraparray__()
+        if not hasattr(self, 'maskarray'):
+            self.__create_maskarray__()
 
         # define the keyword arguments for the model fitting function
         kwargs = self.__define_kwargs__()
@@ -308,53 +307,121 @@ class QubeFit(Qube):
         for key in parameters.keys():
             self.par[key] = parameters[key]
 
-    def calculate_probability(self, KStest=False, fullarray=False, Mask=None):
+    def calculate_probability(self):
 
         """ this will calculate a goodness-of-fit either a KS test or
         reduced chi-squared
         """
 
-        # calculate the residual
-        residual = self.data - self.model
-        if Mask is not None:
-            residual = residual * Mask
-
         # generate a bootstraparray (if needed)
-        if not hasattr(self, 'bootstraparray'):
-            self.__create_bootstraparray__()
+        if not hasattr(self, 'maskarray'):
+            self.__create_maskarray__()
 
-        # calculate the probability through bootstrap sampling
-        pval = []
-        for bootstrap in np.arange(self.bootstraparray.shape[1]):
-            indices = self.bootstraparray[:, bootstrap]
-            residualsample = residual.flatten()[indices]
-            if Mask is not None:
-                maskidx = np.isfinite(residualsample)
-                residualsample = residualsample[maskidx]
+        # get the dictionary needed to get the probability
+        kwargs = self.__define_kwargs__()
 
-            # KS test
-            if KStest:
-                sigmadist_theo = norm(scale=np.median(np.sqrt(self.variance)))
-                residualsample = residualsample - np.mean(residualsample)
-                prob = kstest(residualsample, sigmadist_theo.cdf)[1]
-                if prob <= 0.:
-                    pval.append(-np.inf)
-                else:
-                    pval.append(np.log(prob))
-            else:
-                variancesample = self.variance.flatten()[indices]
-                if Mask is not None:
-                    variancesample = variancesample[maskidx]
-                chisq = np.sum(np.square(residualsample) / variancesample)
-                dof = len(residualsample) - len(self.mcmcpar)
-                redchisq = chisq / dof
-                pval.append(redchisq)
+        # calculate the probability with __ln_prob__()
+        pval = __lnprob__(self.mcmcpar,  **kwargs)
 
-        # return the median log-probability (unless full=True)
-        if fullarray:
-            return pval
+        return pval
+
+    def create_maskarray(self, sampling=2., bootstrapsamples=200,
+                         method='BootChiSq', mask=None, regular=None,
+                         sigma=None, nblobs=1, fmaskgrow=0.1):
+
+        """ This will generate the mask array. It should only be done
+        once so that the mask does not change between runs of the MCMC
+        chain, which could/will result in slightly different probabilities
+        for the same parameters. The mask returned is either the same size
+        as the data cube (filled with np.NaN and 1's for data to
+        ignore/include) or an array with size self.data.size by
+        bootstrapsamples.
+        The first is used for directly calculating the KS
+        or ChiSquared value of the given data point, while the second is used
+        for the bootstrap method of both functions.
+
+        Several mask options can be specified.
+
+        keywords:
+        ---------
+        sampling (float|default: 2.):
+            The number of samples to choose per beam/kernel area
+
+        bootstrapsamples (int|default: 200):
+            The number of bootstrap samples to generate.
+
+        method (string|default: 'ChiSq'):
+            Specifies which method to use
+            to calculate the probability for this masked array. It will also
+            determine which array needs to be returned. Currently allowed
+            values are: 'BootKS', 'BootChiSq', 'KS', ChiSq', 'RedChiSq'
+
+        mask (np.array|default: None):
+            If specified it will take this mask as the mask array,
+            while setting the method that is used with this mask.
+            The mask should have 0 (False) where not wanted and 1(True)
+            if wanted.
+
+        regular(tuple|default: None):
+            If a two element tuple is given, then a regular grid will be
+            generated that is specified by the number of samplings per
+            kernelarea which will go through the given tuple.
+
+        sigma(float|default: None):
+            If given, a mask is created that will just consider values above
+            the specified sigma (based on the calculated variance). Only the
+            n largest blobs will be considered (specified optionally by
+            nblobs). It will grow this mask by convolving with the kernel
+            to include also adjacent 'zero' values.
+
+        nblobs(int|default: 1):
+            number of blobs to consider in the sigma-mask method
+
+        fmaskgrow (float|default: 0.1):
+            fraction of the peak value which marks the limit of where to cut
+            of the growth factor. If set to 1, the mask is not grown.
+
+        returns:
+        -------
+        sets the following keys:
+            self.maskarray
+            self.probmethod
+        """
+
+        # populate the PropMethod key
+        self.probmethod = method
+
+        # bootstrap array
+        if method == 'BootKS' or method == 'BootChiSq':
+
+            # create the mask array
+            size = (int(sampling * self.data.size / self.kernelarea),
+                    bootstrapsamples)
+            self.maskarray = np.random.randint(self.data.size, size=size)
+
+        # regular array
+        elif method == 'KS' or method == 'ChiSq' or method == 'RedChiSq':
+
+            # masks are cumulative / multiplicative
+            self.maskarray = np.ones_like(self.data)
+
+            if mask is not None:
+                self.maskarray *= mask
+
+            if regular is not None:
+                self.maskarray *= __get_regulargrid__(self.data.shape,
+                                                      self.kernelarea,
+                                                      sampling, regular)
+            if sigma is not None:
+                self.maskarray *= __get_sigmamask__(self.data,
+                                                    self.variance,
+                                                    self.kernel,
+                                                    sigma, nblobs, fmaskgrow)
+
+        # not defined method
         else:
-            return np.median(pval)
+            raise ValueError('qubefit: Probability method is not defined: ' +
+                             '{}'.format(method))
 
     def __define_kwargs__(self):
 
@@ -372,7 +439,8 @@ class QubeFit(Qube):
             MString[mkey] = getattr(self, mkey, None)
 
         akeys = ['mcmcmap', 'par', 'shape', 'data', 'kernel',
-                 'variance', 'bootstraparray', 'initpar', 'mask']
+                 'variance', 'maskarray', 'initpar', 'probmethod',
+                 'kernelarea']
 
         kwargs = {'mstring': MString}
         for akey in akeys:
@@ -381,24 +449,13 @@ class QubeFit(Qube):
 
         return kwargs
 
-    def __create_bootstraparray__(self, sampling=1.):
-
-        """ This will generate the bootstrap array. It should only be done
-        once so that the bootstrap calls will give the same probability each
-        time. This is necessary for the MCMC code to give reasonable results.
-        """
-
-        size = (int(sampling * self.data.size / self.kernelarea),
-                self.nbootstrapsamples)
-        self.bootstraparray = np.random.randint(self.data.size, size=size)
 
 #####################################################################
 # THIS IS THE END OF THE CLASS SPECIFIC DEFINITIONS. BELOW ARE SOME #
 # "UNDER-THE-HOOD" functions and definitions                        #
 
 
-def __lnprob__(parameters, fullarray=False, reduced_chisquared=False,
-               **kwargs):
+def __lnprob__(parameters, **kwargs):
 
     """ This will calculate the log-probability of the model compared
     to the data. It will either use the ks-test approach to calculate the
@@ -408,6 +465,32 @@ def __lnprob__(parameters, fullarray=False, reduced_chisquared=False,
     """
 
     # log of the priors
+    lnprior = __get_priorlnprob__(parameters, **kwargs)
+
+    if not np.isfinite(lnprior):
+        return lnprior
+    else:
+        # update the parameters according to the predefined map
+        __update_parameters__(parameters, **kwargs)
+
+        # create a model for the cube
+        model = __create_model__(**kwargs)
+
+        # calculate the residual
+        residual = kwargs['data'] - model
+
+        # calculate the probability
+        lnprob = __get_lnprob__(residual, **kwargs)
+
+        return lnprob
+
+
+def __get_priorlnprob__(parameters, **kwargs):
+
+    """ Calculate prior probability distribution function based on the
+    distribution defined for each parameter.
+    """
+
     lnprior = []
     for parameter, key in zip(parameters, kwargs['mcmcmap']):
         if kwargs['initpar'][key]['Conversion'] is not None:
@@ -424,55 +507,89 @@ def __lnprob__(parameters, fullarray=False, reduced_chisquared=False,
         lnprior.append(eval(kwargs['initpar'][key]['Dist']).logpdf(parameter,
                        loc=Loc, scale=Scale))
 
-    if not np.isfinite(np.sum(lnprior)):
-        return np.sum(lnprior)
-    else:
-        # update the parameters according to the predefined map
-        __update_parameters__(parameters, **kwargs)
+    return np.sum(lnprior)
 
-        # create a model for the cube
-        model = __create_model__(**kwargs)
 
-        # calculate the residual
-        residual = kwargs['data'] - model
-        if kwargs['mask'] is not None:
-            residual = residual * kwargs['mask']
+def __get_lnprob__(residual, **kwargs):
 
-        # calculate the probability through bootstrap sampling
-        pval = []
-        for bootstrap in np.arange(kwargs['bootstraparray'].shape[1]):
-            indices = kwargs['bootstraparray'][:, bootstrap]
+    """ This function will calculate the probability for the residual. Several
+    approaches can be defined using the kwargs['ProbMethod']. This keyword is
+    set when the mask array is specified (see self.create_maskarray).
+
+    'Chi-Squared' likelihood function is calulated using the approach:
+    ChiSquared = np.sum(np.square(data - model) / variance +
+                        np.log(2 * pi * variance))
+    Here the second part is really not necessary as it is a constant term and
+    the log likelihood is insensitive to constant additive factors. We assume
+    that the PSF/beam is Nyquist sampled, meaning that we have 
+    
+    -0.5 * [(data - model)**2 / variance +  np.log(2 * np.pi * variancesample)]
+    * Nyquist**2
+    The 
+
+    NOTE: Currently the prior distributions are not multiplied through instead
+    they are taken as either -inf or 1. This is ok for uniformed priors but
+    NOT correct for other priors.
+    """
+
+    # the bootstrap methods
+    Boot = (kwargs['probmethod'] == 'BootKS' or
+            kwargs['probmethod'] == 'BootChiSq')
+    if Boot:
+        PArr = []
+        for bootstrap in np.arange(kwargs['maskarray'].shape[1]):
+
+            # get indices
+            indices = kwargs['maskarray'][:, bootstrap]
             residualsample = residual.flatten()[indices]
-            if kwargs['mask'] is not None:
-                maskidx = np.isfinite(residualsample)
-                residualsample = residualsample[maskidx]
 
-            if kwargs['variance'].shape != kwargs['data'].shape:
+            if kwargs['probmethod'] == 'BootKS':
                 scale = np.median(np.sqrt(kwargs['variance']))
                 sigmadist_theo = norm(scale=scale)
                 residualsample = residualsample - np.mean(residualsample)
                 prob = kstest(residualsample, sigmadist_theo.cdf)[1]
                 if prob <= 0.:
-                    pval.append(-np.inf)
+                    PArr.append(-np.inf)
                 else:
-                    pval.append(np.log(prob))
-            else:
+                    PArr.append(np.log(prob))
+            elif kwargs['probmethod'] == 'BootChiSq':
                 variancesample = kwargs['variance'].flatten()[indices]
-                if kwargs['mask'] is not None:
-                    variancesample = variancesample[maskidx]
                 chisq = np.sum(np.square(residualsample) / variancesample)
-                if reduced_chisquared:
-                    dof = len(residualsample) - len(kwargs['mcmcpar'])
-                    redchisq = chisq / dof
-                    pval.append(-0.5 * redchisq)
-                else:
-                    pval.append(-0.5 * chisq)
+                PArr.append(-0.5 * chisq)
+            else:
+                raise ValueError('Bootstrap method not defined.')
 
-        # return the median log-probability (unless fullarray=True)
-        if fullarray:
-            return pval
+        # return the median log-probability
+        return np.median(PArr)
+
+    else:
+        residualsample = residual[np.where(kwargs['maskarray'])]
+        variancesample = kwargs['variance'][np.where(kwargs['maskarray'])]
+
+        if kwargs['probmethod'] == 'KS':
+            scale = np.median(np.sqrt(variancesample))
+            sigmadist_theo = norm(scale=scale)
+            residualsample = residualsample - np.mean(residualsample)
+            prob = kstest(residualsample, sigmadist_theo.cdf)[1]
+            if prob <= 0.:
+                lnprob = -np.inf
+            else:
+                lnprob = np.log(prob)
+        elif kwargs['probmethod'] == 'ChiSq':
+            # chisq = np.sum(np.square(residualsample) / variancesample)
+            chisq = np.sum(np.square(residualsample) / variancesample +
+                           np.log(2 * np.pi * variancesample))
+            lnprob = -0.5 * chisq / kwargs['kernelarea'] * 2**2
+        elif kwargs['probmethod'] == 'RedChiSq':
+            # chisq = np.sum(np.square(residualsample) / variancesample)
+            chisq = np.sum(np.square(residualsample) / variancesample +
+                           np.log(2 * np.pi * variancesample))
+            dof = len(residualsample) - len(kwargs['mcmcpar'])
+            lnprob = -0.5 * chisq / dof
         else:
-            return np.median(pval)
+            raise ValueError('Bootstrap method not defined.')
+
+        return lnprob
 
 
 def __update_parameters__(parameters, **kwargs):
@@ -497,3 +614,55 @@ def __create_model__(**kwargs):
     model = eval(modeln)(**kwargs)
 
     return model
+
+
+def __get_regulargrid__(shape, kernelarea, sampling, center):
+
+    """ Creates a regular grid of values for the given array shape. Such that
+    there are approximately n samplings per kernelarea, where n is given by
+    the sampling parameter.
+    """
+
+    # approximate scalelength for the points in pixels
+    r = np.sqrt(kernelarea / sampling * np.pi)
+
+    # xarray
+    tx = np.zeros(shape[2])
+    xidx = np.arange(center[0] - r * shape[2], center[0] + r * shape[2], r)
+    xidx = xidx[(xidx > 0) & (xidx < shape[2])].astype(int)
+    tx[xidx] = 1
+    x = np.tile(tx[np.newaxis, np.newaxis, :], (shape[0], shape[1], 1))
+
+    # yarray
+    ty = np.zeros(shape[1])
+    yidx = np.arange(center[1] - r * shape[1], center[1] + r * shape[1], r)
+    yidx = yidx[(yidx > 0) & (yidx < shape[1])].astype(int)
+    ty[yidx] = 1
+    y = np.tile(ty[np.newaxis, :, np.newaxis], (shape[0], 1, shape[2]))
+
+    mask = x * y
+
+    return mask
+
+
+def __get_sigmamask__(data, variance, kernel, sigma, nblobs, fmaskgrow):
+
+    """ Creates a mask based on the variance of the cube
+    """
+
+    # create the blobs and sort them
+    lab = measure.label(data > sigma * np.sqrt(variance))
+    bins = np.bincount(lab.flatten())
+    args = np.argsort(bins)[::-1][1:1+nblobs]
+
+    # add the blobs to the mask
+    mask = np.zeros_like(data)
+    for arg in args:
+        mask[np.where(lab == arg)] = 1
+
+    # grow the mask
+    if fmaskgrow != 1:
+        mask = convolve(mask, kernel)
+        mask = np.where(mask < fmaskgrow, 0, 1)
+
+    return mask

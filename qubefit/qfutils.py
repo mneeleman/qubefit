@@ -337,7 +337,7 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
         standardfig(raster=rasterimage, contour=contourimage, clevels=clevel,
                     newplot=False, fig=fig, ax=grid[idx], cbar=False,
                     beam=beambool, vrange=vrange, text=[VelStr], cmap=cmap,
-                    **kwargs)
+                    textprop=[dict(size=12)], **kwargs)
 
     # now do the color bar
     norm = mpl.colors.Normalize(vmin=vrange[0], vmax=vrange[1])
@@ -500,7 +500,7 @@ def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
         # plot the figures
         standardfig(raster=dMom0, contour=dMom0, clevels=clevels, ax=grid[0],
                     fig=fig, vrange=vrangemom, cmap=cmap0, text='Data',
-                    **kwargs)
+                    textprop=[dict(size=12)], **kwargs)
         standardfig(raster=mMom0, contour=mMom0, clevels=clevels, ax=grid[1],
                     fig=fig, vrange=vrangemom, cmap=cmap0, beam=False,
                     text='Model', textprop=[dict(size=12)], **kwargs)
