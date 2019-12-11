@@ -567,3 +567,77 @@ def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
 
         plt.savefig(outname + '_moment2.pdf', format='pdf', dpi=300)
         plt.close()
+
+
+def modeldata_comparison(cube, pdffile=None, **kwargs):
+
+    """This will make a six-panel plot for providing an easy overview of the
+    the model and the data. Panels are the zeroth moment for the model,
+    the data and the residual, the first moment for the model and the data,
+    and the residual in the velocity field.
+
+    inputs:
+    -------
+    cube: Qubefit object that holds the data and the model
+
+    keywords:
+    ---------
+    pdffile (string|default: None): If set, will save the image to a pdf file
+
+    showmask (Bool|default: False): If set, it will show a contour of the mask
+        used in creating the fit (stored in cube.maskarray).
+    """
+
+    # create the figure plots
+    fig = plt.figure(1, (8., 8.))
+    grid = ImageGrid(fig, 111, nrows_ncols=(2, 3), axes_pad=0)
+
+    # create the data, model and residual cubes
+    dqube = dc(cube)
+    mqube = dc(cube)
+    mqube.data = cube.model
+    rqube = dc(cube)
+    rqube.data = cube.data - cube.model
+
+    # moment-zero data
+    dMom0 = dqube.calculate_moment(moment=0)
+    Mom0sig = (np.sqrt(np.nansum(cube.variance[:, 0, 0])) *
+               cube.__get_velocitywidth__())
+    clevels = np.insert(np.arange(3, 30, 3), 0, np.arange(-30, 0, 3)) * Mom0sig
+    vrangemom = [-3 * Mom0sig, 11 * Mom0sig]
+    mask = dMom0.mask_region(value=Mom0sig * 3, applymask=False)
+    standardfig(raster=dMom0, contour=dMom0, clevels=clevels, ax=grid[0],
+                fig=fig, vrange=vrangemom, cmap='RdYlBu_r', text='Data',
+                textprop=[dict(size=12)], **kwargs)
+
+    # moment-zero model
+    mMom0 = mqube.calculate_moment(moment=0)
+    standardfig(raster=mMom0, contour=mMom0, clevels=clevels, ax=grid[1],
+                fig=fig, vrange=vrangemom, cmap='RdYlBu_r', text='Model',
+                textprop=[dict(size=12)], **kwargs)
+
+    # moment-zero residual
+    rMom0 = rqube.calculate_moment(moment=0)
+    standardfig(raster=rMom0, contour=rMom0, clevels=clevels, ax=grid[2],
+                fig=fig, vrange=vrangemom, cmap='RdYlBu_r', text='Residual',
+                textprop=[dict(size=12)], **kwargs)
+
+    # moment-one data
+    dsqube = dqube.mask_region(mask=mask)
+    dMom1 = dsqube.calculate_moment(moment=1)
+    vrangemom1 = [0.95 * np.nanmin(dMom1.data), 0.95 * np.nanmax(dMom1.data)]
+    standardfig(raster=dMom1, ax=grid[3], fig=fig, cmap='Spectral_r',
+                vrange=vrangemom1, text='Data',
+                textprop=[dict(size=12)], **kwargs)
+
+    msqube = mqube.mask_region(mask=mask)
+    mMom1 = msqube.calculate_moment(moment=1)
+    standardfig(raster=mMom1, ax=grid[4], fig=fig, cmap='Spectral_r',
+                vrange=vrangemom1, beam=False, text='Model',
+                textprop=[dict(size=12)], **kwargs)
+    
+    rMom1 = dc(mMom1)
+    rMom1.data = dMom1.data - mMom1.data
+    standardfig(raster=rMom1, ax=grid[5], fig=fig, cmap='Spectral_r',
+                vrange=vrangemom1, beam=False, text='Residual',
+                textprop=[dict(size=12)], **kwargs)
