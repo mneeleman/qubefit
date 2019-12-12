@@ -2,12 +2,13 @@
 import numpy as np
 from scipy.special import erf
 import emcee
-from progressbar import Bar, AdaptiveETA, Percentage, ProgressBar
 from astropy.convolution import convolve, Gaussian1DKernel, Gaussian2DKernel
 from scipy.stats import norm, uniform, kstest
 from skimage import measure
 from qubefit.qube import Qube
 from qubefit.qfmodels import *
+from multiprocessing import Pool
+import os
 
 
 class QubeFit(Qube):
@@ -146,12 +147,26 @@ class QubeFit(Qube):
         kwargs['convolve'] = convolve
         self.model = __create_model__(**kwargs)
 
-    def run_mcmc(self, nwalkers=50, nruns=100, threads=10, fancy=True,
-                 tofile=False, filename='./chain.dat'):
+    def run_mcmc(self, nwalkers=50, nruns=100, Nprocesses=None):
 
         """ This is the heart of QubeFit. It will run an MCMC process on a
         predefined model and will return the resulting chain of the posterior
         PDFs of each individual parameter that was varied.
+
+        keywords:
+        ---------
+        nwalkers (int|default: 50)
+            The number of walkers to use in the MCMC chain analysis.
+
+        nruns (int|default: 100)
+            The number of runs in the MCMC chain analysis.
+
+        Nprocesses (int|default: None)
+            If set to an integer, it determines the number of processes to
+            spawn. if None, the code will determine the optimum number of
+            processes to spawn to distribute over the available CPU cores.
+            Set this number to limit the load of the code (i.e., to play
+            nice with others)
         """
 
         # intiate the model (redo if already done)
@@ -175,66 +190,21 @@ class QubeFit(Qube):
         print('Intial probability is: {}'.format(initprob))
 
         # define the sampler
-        sampler = emcee.EnsembleSampler(nwalkers, self.mcmcdim,
-                                        __lnprob__, kwargs=kwargs,
-                                        threads=threads)
+        os.environ["OMP_NUM_THREADS"] = "1"
+        with Pool(Nprocesses) as pool:
+            sampler = emcee.EnsembleSampler(nwalkers, self.mcmcdim,
+                                            __lnprob__, pool=pool,
+                                            kwargs=kwargs)
 
-        # initiate the walkers
-        p0 = [(1 + 0.02 * np.random.rand(self.mcmcdim)) * self.mcmcpar
-              for walker in range(nwalkers)]
+            # initiate the walkers
+            p0 = [(1 + 0.02 * np.random.rand(self.mcmcdim)) * self.mcmcpar
+                  for walker in range(nwalkers)]
 
-        ######################
-        # run the mcmc chain #
-
-        # progress bar definition
-        if fancy:
-            widgets = [Percentage(), ' ', Bar(), ' ', AdaptiveETA()]
-            pbar = ProgressBar(widgets=widgets, maxval=nruns)
-            pbar.start()
-        else:
-            print('Starting the MCMC chain')
-            width = 30
-
-        # writing to file
-        if tofile:
-            f = open(filename, "w")
-            f.close()
-            storechain = False
-        else:
-            storechain = True
-
-        # here is the actual iterative part of the MCMC
-        for i, result in enumerate(sampler.sample(p0, iterations=nruns,
-                                                  storechain=storechain)):
-            # add to file (if set)
-            if tofile:
-                position = result[0]
-                lnprob = result[1]
-                f = open("chain.dat", "a")
-                for k in range(position.shape[0]):
-                    print
-                    f.write("{0:4d} {1:s} {2:4f}\n".format(k,
-                            " ".join(position[k].astype(str)),
-                            lnprob[k]))
-                f.close()
-
-            # print the progress bar
-            if fancy:
-                pbar.update(i + 1)
-            else:
-                n = int((width+1) * float(i) / nruns)
-                print("[{0}{1}]".format('#' * n, ' ' * (width - n)), end='\r')
-
-        # finish things up:
-        if fancy:
-            pbar.finish()
-        else:
-            print("[###########DONE!")
+            # run the mcmc chain
+            sampler.run_mcmc(p0, nruns, progress=True)
 
         # Now store the results into an array
-
-        if not tofile:
-            self.mcmcarray = sampler.chain
+        self.mcmcarray = sampler.chain
 
         return sampler
 
