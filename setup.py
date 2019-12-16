@@ -77,6 +77,13 @@ setup_keywords['package_data'] = {'qubefit': data_files,
 setup_keywords['include_package_data'] = True
 
 #
+# trial adding script
+#
+
+entry_points = {}
+entry_points['console_scripts'] = ['qfgui = qubefit.scripts.qfgui:main']
+setup_keywords['entry_points'] = entry_points
+#
 # Run setup command.
 #
 setup(**setup_keywords)
