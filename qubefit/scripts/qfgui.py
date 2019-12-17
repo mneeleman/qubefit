@@ -6,16 +6,18 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvas
 import numpy as np
 import importlib
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 
 class ApplicationWindow(QtWidgets.QWidget):
 
     def __init__(self, modelfile):
         super().__init__()
-        self.left = 50
+        self.left = 20
         self.top = 50
-        self.width = 1200
-        self.height = 600
+        self.width = 1500
+        self.height = 1000
         self.initQube(modelfile)
         self.initUI()
 
@@ -29,7 +31,9 @@ class ApplicationWindow(QtWidgets.QWidget):
         self.rmsval = np.nanmedian(np.sqrt(self.qube.variance[self.channel]))
         self.vmin = -3 * self.rmsval
         self.vmax = 11 * self.rmsval
+        self.cmap = 'RdYlBu_r'
         self.contours = np.array([2, 3, 6, 9, 12])
+        self.ccolor = 'black'
 
     def initUI(self):
         self.setWindowTitle(self.title)
@@ -39,19 +43,20 @@ class ApplicationWindow(QtWidgets.QWidget):
         self.get_parameter_layout()
         self.get_chanselect_layout()
         self.get_controls_layout()
-        self.get_canvas_layout()
+        self.get_canvas1_layout()
+        self.get_canvas2_layout()
 
         # add to layout
         mainLayout = QtWidgets.QGridLayout()
-        mainLayout.addWidget(self.canvas, 0, 0, 4, 4)
-        mainLayout.addWidget(self.parameter, 0, 5, 4, 1)
-        mainLayout.addWidget(self.chanselect, 4, 5, 1, 1)
-        mainLayout.addWidget(self.controls, 4, 0, 1, 4)
-
+        mainLayout.addWidget(self.canvas1, 0, 0, 3, 2)
+        mainLayout.addWidget(self.canvas2, 0, 3, 3, 2)
+        mainLayout.addWidget(self.parameter, 0, 6, 3, 1)
+        mainLayout.addWidget(self.controls, 3, 0, 1, 6)
+        mainLayout.addWidget(self.chanselect, 3, 6, 1, 1)
         self.setLayout(mainLayout)
 
-        # show the widget
-        self.show()
+        # update/create the figures
+        self.update_figures()
 
     def get_parameter_layout(self):
         self.parameter = QtWidgets.QGroupBox('Model Parameters')
@@ -67,57 +72,41 @@ class ApplicationWindow(QtWidgets.QWidget):
             self.lepar.append(QtWidgets.QLineEdit(strval, self))
 
         # the GO button
-        self.button2 = QtWidgets.QPushButton('OK', self)
-        self.button2.clicked.connect(self.update_model)
+        self.gobutton = QtWidgets.QPushButton('OK', self)
+        self.gobutton.clicked.connect(self.update_model)
 
+        # layout
         layout = QtWidgets.QGridLayout()
         for idx in np.arange(self.nparameters):
             layout.addWidget(self.lepar_label[idx], idx, 0)
             layout.addWidget(self.lepar[idx], idx, 1)
-        layout.addWidget(self.button2, idx + 1, 0, 1, 2)
+        layout.addWidget(self.gobutton, idx + 1, 0, 1, 2)
         self.parameter.setLayout(layout)
 
     def get_chanselect_layout(self):
         self.chanselect = QtWidgets.QGroupBox('Channel Select Controls')
 
-        # create the slider
+        # create the channel slider
         self.channelslider = QtWidgets.QScrollBar(QtCore.Qt.Horizontal, self)
         self.channelslider.setRange(0, self.nchannels - 1)
-        self.channelslider.valueChanged.connect(self.sliderchanged)
+        self.channelslider.valueChanged.connect(self.channelslider_changed)
 
-        # define the first line edit
-        self.le1_label = QtWidgets.QLabel(self)
-        self.le1_label.setText('Channel: ')
-        self.le1 = QtWidgets.QLineEdit(str(self.channel), self)
-        self.le1.setToolTip('Type here the channel number you want to display')
-        self.le1.returnPressed.connect(self.text_changed)
+        # define the channel text box
+        self.channeltext_label = QtWidgets.QLabel(self)
+        self.channeltext_label.setText('Channel: ')
+        self.channeltext = QtWidgets.QLineEdit(str(self.channel), self)
+        self.channeltext.setToolTip('The channel number you want to display')
+        self.channeltext.returnPressed.connect(self.channeltext_changed)
 
+        # layout
         layout = QtWidgets.QGridLayout()
         layout.addWidget(self.channelslider, 0, 0, 1, 5)
-        layout.addWidget(self.le1_label, 1, 0, 1, 1)
-        layout.addWidget(self.le1, 1, 1, 1, 4)
+        layout.addWidget(self.channeltext_label, 1, 0, 1, 1)
+        layout.addWidget(self.channeltext, 1, 1, 1, 4)
         self.chanselect.setLayout(layout)
 
     def get_controls_layout(self):
-        self.controls = QtWidgets.QGroupBox('Image Options')
-
-        # contour buttons
-        self.dcontour = QtWidgets.QCheckBox('Plot data contours')
-        self.mcontour = QtWidgets.QCheckBox('Plot model contours')
-        self.dcontour.setChecked(False)
-        self.mcontour.setChecked(False)
-        self.dcontour.stateChanged.connect(self.update_figures)
-        self.mcontour.stateChanged.connect(self.update_figures)
-
-        # RMS and contour levels
-        self.rms = QtWidgets.QLabel(self)
-        strrms = np.nanmedian(np.sqrt(self.qube.variance[self.channel]))
-        self.rms.setText('RMS value: {:10.7f}'.format(strrms))
-        self.levels = QtWidgets.QLineEdit(__arrtostr__(self.contours), self)
-        self.levels.setToolTip('Contours to display (in terms of RMS). ' +
-                               'Shold be a list of floats seperated ' +
-                               'by commas.')
-        self.levels.returnPressed.connect(self.update_contours)
+        self.controls = QtWidgets.QGroupBox('Image controls')
 
         # min and max values
         self.min_label = QtWidgets.QLabel(self)
@@ -131,65 +120,140 @@ class ApplicationWindow(QtWidgets.QWidget):
         self.max.setToolTip('The maxmimum value to display.')
         self.max.returnPressed.connect(self.update_max)
 
-        # layout
+        # RMS value
+        self.rms = QtWidgets.QLabel(self)
+        strrms = np.nanmedian(np.sqrt(self.qube.variance[self.channel]))
+        self.rms.setText('RMS value: {:10.7f}'.format(strrms))
+
+        # Contour levels
+        self.levels_label = QtWidgets.QLabel(self)
+        self.levels_label.setText('Contour levels: ')
+        self.levels = QtWidgets.QLineEdit(__arrtostr__(self.contours), self)
+        self.levels.setToolTip('Contours levels to display ' +
+                               '(in terms of RMS). Should be a list of ' +
+                               'floats separated by commas.')
+        self.levels.returnPressed.connect(self.update_contours)
+
+        # color map
+        self.colormap_label = QtWidgets.QLabel(self)
+        self.colormap_label.setText('Colormap: ')
+        self.colormap = QtWidgets.QLineEdit('{}'.format(self.cmap), self)
+        self.colormap.setToolTip('The color map to use for the display')
+        self.colormap.returnPressed.connect(self.update_cmap)
+
+        # Contour colors
+        self.levelcolor_label = QtWidgets.QLabel(self)
+        self.levelcolor_label.setText('Contour Color: ')
+        self.levelcolor = QtWidgets.QLineEdit('{}'.format(self.ccolor), self)
+        self.levelcolor.setToolTip('The color of the contours')
+        self.levelcolor.returnPressed.connect(self.update_levelcolor)
+
+        # create layout
         layout = QtWidgets.QGridLayout()
-        layout.addWidget(self.dcontour, 0, 0)
-        layout.addWidget(self.mcontour, 1, 0)
-        layout.addWidget(self.rms, 0, 1)
-        layout.addWidget(self.levels, 1, 1)
-        layout.addWidget(self.min_label, 0, 2)
-        layout.addWidget(self.max_label, 1, 2)
-        layout.addWidget(self.min, 0, 3)
-        layout.addWidget(self.max, 1, 3)
+        layout.addWidget(self.min_label, 0, 0)
+        layout.addWidget(self.min, 0, 1)
+        layout.addWidget(self.max_label, 1, 0)
+        layout.addWidget(self.max, 1, 1)
+        layout.addWidget(self.rms, 0, 2, 1, 2)
+        layout.addWidget(self.levels_label, 1, 2)
+        layout.addWidget(self.levels, 1, 3)
+        layout.addWidget(self.colormap_label, 0, 4)
+        layout.addWidget(self.colormap, 0, 5)
+        layout.addWidget(self.levelcolor_label, 1, 4)
+        layout.addWidget(self.levelcolor, 1, 5)
         self.controls.setLayout(layout)
 
-    def get_canvas_layout(self):
-        self.canvas = QtWidgets.QGroupBox('Data and Model Images')
+    def get_canvas1_layout(self):
+        self.canvas1 = QtWidgets.QGroupBox('Canvas 1')
 
-        # the radio buttons
-        self.radio1ax1 = QtWidgets.QRadioButton('Data')
-        self.radio2ax1 = QtWidgets.QRadioButton('Model')
-        self.radio3ax1 = QtWidgets.QRadioButton('Residual')
-        self.radio1ax1.setChecked(True)
-        self.radio1ax2 = QtWidgets.QRadioButton('Data')
-        self.radio2ax2 = QtWidgets.QRadioButton('Model')
-        self.radio3ax2 = QtWidgets.QRadioButton('Residual')
-        self.radio1ax2.setChecked(True)
+        # the image selection buttons
+        self.im1_bg_label = QtWidgets.QLabel(self)
+        self.im1_bg_label.setText('Image: ')
+        self.im1_buttons = [QtWidgets.QRadioButton('Data'),
+                            QtWidgets.QRadioButton('Model'),
+                            QtWidgets.QRadioButton('Residual'),
+                            QtWidgets.QRadioButton('None')]
+        self.im1_buttons[0].setChecked(True)
+        self.im1_bg = QtWidgets.QButtonGroup(self)
+        for button in self.im1_buttons:
+            self.im1_bg.addButton(button)
+        self.im1_bg.buttonClicked.connect(self.update_figures)
 
-        # add the buttons to a group
-        self.bgroupax1 = QtWidgets.QButtonGroup(self)
-        self.bgroupax1.addButton(self.radio1ax1, 1)
-        self.bgroupax1.addButton(self.radio2ax1, 2)
-        self.bgroupax1.addButton(self.radio3ax1, 3)
-        self.bgroupax2 = QtWidgets.QButtonGroup(self)
-        self.bgroupax2.addButton(self.radio1ax2, 1)
-        self.bgroupax2.addButton(self.radio2ax2, 2)
-        self.bgroupax2.addButton(self.radio3ax2, 3)
-        self.bgroupax1.buttonClicked.connect(self.update_figures)
-        self.bgroupax2.buttonClicked.connect(self.update_figures)
+        # the contour selection buttons
+        self.co1_bg_label = QtWidgets.QLabel(self)
+        self.co1_bg_label.setText('Contours: ')
+        self.co1_buttons = [QtWidgets.QRadioButton('Data'),
+                            QtWidgets.QRadioButton('Model'),
+                            QtWidgets.QRadioButton('Residual'),
+                            QtWidgets.QRadioButton('None')]
+        self.co1_buttons[3].setChecked(True)
+        self.co1_bg = QtWidgets.QButtonGroup(self)
+        for button in self.co1_buttons:
+            self.co1_bg.addButton(button)
+        self.co1_bg.buttonClicked.connect(self.update_figures)
 
-        # the two canvases
-        self.canvas1 = FigureCanvas(Figure(figsize=(5, 5)))
-        self._ax1 = self.canvas1.figure.subplots()
-        self.canvas2 = FigureCanvas(Figure(figsize=(5, 5)))
-        self._ax2 = self.canvas2.figure.subplots()
-        self.update_figures()
+        # the canvas
+        self.fig1 = FigureCanvas(Figure(figsize=(5, 5)))
+        self._ax1 = self.fig1.figure.subplots()
 
         # the layout
         layout = QtWidgets.QGridLayout()
-        layout.addWidget(self.radio1ax1, 0, 0)
-        layout.addWidget(self.radio2ax1, 0, 1)
-        layout.addWidget(self.radio3ax1, 0, 2)
-        layout.addWidget(self.radio1ax2, 0, 3)
-        layout.addWidget(self.radio2ax2, 0, 4)
-        layout.addWidget(self.radio3ax2, 0, 5)
-        layout.addWidget(self.canvas1, 1, 0, 3, 3)
-        layout.addWidget(self.canvas2, 1, 3, 3, 3)
-        self.canvas.setLayout(layout)
+        layout.addWidget(self.fig1, 0, 0, 6, 6)
+        layout.addWidget(self.im1_bg_label, 6, 0)
+        for idx, button in enumerate(self.im1_buttons):
+            layout.addWidget(button, 6, idx + 1)
+        layout.addWidget(self.co1_bg_label, 7, 0)
+        for idx, button in enumerate(self.co1_buttons):
+            layout.addWidget(button, 7, idx + 1)
+        self.canvas1.setLayout(layout)
 
-    def text_changed(self):
+    def get_canvas2_layout(self):
+        self.canvas2 = QtWidgets.QGroupBox('Canvas 2')
+
+        # the image selection buttons
+        self.im2_bg_label = QtWidgets.QLabel(self)
+        self.im2_bg_label.setText('Image: ')
+        self.im2_buttons = [QtWidgets.QRadioButton('Data'),
+                            QtWidgets.QRadioButton('Model'),
+                            QtWidgets.QRadioButton('Residual'),
+                            QtWidgets.QRadioButton('None')]
+        self.im2_buttons[1].setChecked(True)
+        self.im2_bg = QtWidgets.QButtonGroup(self)
+        for button in self.im2_buttons:
+            self.im2_bg.addButton(button)
+        self.im2_bg.buttonClicked.connect(self.update_figures)
+
+        # the contour selection buttons
+        self.co2_bg_label = QtWidgets.QLabel(self)
+        self.co2_bg_label.setText('Contours: ')
+        self.co2_buttons = [QtWidgets.QRadioButton('Data'),
+                            QtWidgets.QRadioButton('Model'),
+                            QtWidgets.QRadioButton('Residual'),
+                            QtWidgets.QRadioButton('None')]
+        self.co2_buttons[3].setChecked(True)
+        self.co2_bg = QtWidgets.QButtonGroup(self)
+        for button in self.co2_buttons:
+            self.co2_bg.addButton(button)
+        self.co2_bg.buttonClicked.connect(self.update_figures)
+
+        # the canvas
+        self.fig2 = FigureCanvas(Figure(figsize=(5, 5)))
+        self._ax2 = self.fig2.figure.subplots()
+
+        # the layout
+        layout = QtWidgets.QGridLayout()
+        layout.addWidget(self.fig2, 0, 0, 6, 6)
+        layout.addWidget(self.im2_bg_label, 6, 0)
+        for idx, button in enumerate(self.im2_buttons):
+            layout.addWidget(button, 6, idx + 1)
+        layout.addWidget(self.co2_bg_label, 7, 0)
+        for idx, button in enumerate(self.co2_buttons):
+            layout.addWidget(button, 7, idx + 1)
+        self.canvas2.setLayout(layout)
+
+    def channeltext_changed(self):
         try:
-            value = int(self.le1.text())
+            value = int(self.channeltext.text())
             if value < self.nchannels and value >= 0:
                 self.channel = value
             elif value < 0:
@@ -200,41 +264,40 @@ class ApplicationWindow(QtWidgets.QWidget):
             print('Not a valid integer number')
         self.update_channel()
 
-    def sliderchanged(self):
+    def channelslider_changed(self):
         self.channel = self.channelslider.value()
         self.update_channel()
 
     def update_channel(self):
         self.channelslider.setValue(self.channel)
-        self.le1.setText(str(self.channel))
+        self.channeltext.setText(str(self.channel))
         self.rmsval = np.nanmedian(np.sqrt(self.qube.variance[self.channel]))
         self.rms.setText('RMS value: {:10.7f}'.format(self.rmsval))
         self.update_figures()
 
     def update_figures(self):
+        # canvas 1
         self._ax1.clear()
-        self._ax2.clear()
-        data1 = self.select_data(self.bgroupax1.checkedButton().text())
-        data2 = self.select_data(self.bgroupax2.checkedButton().text())
-        self._ax1.imshow(data1[self.channel, :, :], origin='lower',
-                         cmap='RdYlBu_r', vmin=self.vmin, vmax=self.vmax)
-        self._ax2.imshow(data2[self.channel, :, :], origin='lower',
-                         cmap='RdYlBu_r', vmin=self.vmin, vmax=self.vmax)
-        if self.dcontour.isChecked():
-            self._ax1.contour(self.qube.data[self.channel, :, :],
-                              colors='black',
-                              levels=self.contours * self.rmsval)
-            self._ax2.contour(self.qube.data[self.channel, :, :],
-                              colors='black',
-                              levels=self.contours * self.rmsval)
-        if self.mcontour.isChecked():
-            self._ax1.contour(self.qube.model[self.channel, :, :],
-                              colors='black',
-                              levels=self.contours * self.rmsval)
-            self._ax2.contour(self.qube.model[self.channel, :, :],
-                              colors='black',
+        data1 = self.select_data(self.im1_bg.checkedButton().text())
+        if data1 is not None:
+            self._ax1.imshow(data1[self.channel, :, :], origin='lower',
+                             cmap=self.cmap, vmin=self.vmin, vmax=self.vmax)
+        cont1 = self.select_data(self.co1_bg.checkedButton().text())
+        if cont1 is not None:
+            self._ax1.contour(cont1[self.channel, :, :], colors=self.ccolor,
                               levels=self.contours * self.rmsval)
         self._ax1.figure.canvas.draw()
+
+        # canvas 2
+        self._ax2.clear()
+        data2 = self.select_data(self.im2_bg.checkedButton().text())
+        if data2 is not None:
+            self._ax2.imshow(data2[self.channel, :, :], origin='lower',
+                             cmap=self.cmap, vmin=self.vmin, vmax=self.vmax)
+        cont2 = self.select_data(self.co2_bg.checkedButton().text())
+        if cont2 is not None:
+            self._ax2.contour(cont2[self.channel, :, :], colors=self.ccolor,
+                              levels=self.contours * self.rmsval)
         self._ax2.figure.canvas.draw()
 
     def update_model(self):
@@ -258,7 +321,7 @@ class ApplicationWindow(QtWidgets.QWidget):
             self.update_figures()
         except ValueError:
             print('Not a valid list of contours!')
-            self.levels.setText()
+            self.levels.setText(__arrtostr__(self.contours))
 
     def update_min(self):
         try:
@@ -278,23 +341,32 @@ class ApplicationWindow(QtWidgets.QWidget):
             print(self.max.text() + ' is not a valid float!')
             self.max.setText(str(self.vmax))
 
+    def update_cmap(self):
+        if self.colormap.text() in plt.colormaps():
+            self.cmap = self.colormap.text()
+            self.update_figures()
+        else:
+            print(self.colormap.text() + ' is not a valid color map!')
+            self.colormap.setText(self.cmap)
+
+    def update_levelcolor(self):
+        if self.levelcolor.text() in mpl.colors.cnames.keys():
+            self.ccolor = self.levelcolor.text()
+            self.update_figures()
+        else:
+            print(self.levelcolor.text() + ' is not a valid contour color!')
+            self.levelcolor.setText(self.ccolor)
+
     def select_data(self, button):
         if button == 'Data':
             data = self.qube.data
         elif button == 'Model':
             data = self.qube.model
-        else:
+        elif button == 'Residual':
             data = self.qube.data - self.qube.model
-
+        else:
+            data = None
         return data
-
-
-def __arrtostr__(array):
-    strlevels = ''
-    for i in array:
-        strlevels = strlevels + str(i) + ', '
-    strlevels = strlevels[:-2]
-    return strlevels
 
 
 def main():
@@ -307,16 +379,13 @@ def main():
         if sys.argv[1].endswith('.py'):
             sys.argv[1] = sys.argv[1][:-3]
         AppWin = ApplicationWindow(sys.argv[1])
+        AppWin.show()
         sys.exit(app.exec_())
 
 
-if __name__ == '__main__':
-    app = QtWidgets.QApplication(sys.argv)
-    if len(sys.argv) != 2:
-        print('Please supply the python script that defines the model')
-        sys.exit()
-    else:
-        if sys.argv[1].endswith('.py'):
-            sys.argv[1] = sys.argv[1][:-3]
-        AppWin = ApplicationWindow(sys.argv[1])
-        sys.exit(app.exec_())
+def __arrtostr__(array):
+    strlevels = ''
+    for i in array:
+        strlevels = strlevels + str(i) + ', '
+    strlevels = strlevels[:-2]
+    return strlevels
