@@ -147,7 +147,7 @@ class QubeFit(Qube):
         kwargs['convolve'] = convolve
         self.model = __create_model__(**kwargs)
 
-    def run_mcmc(self, nwalkers=50, nruns=100, Nprocesses=None):
+    def run_mcmc(self, nwalkers=50, nruns=100, nproc=None):
 
         """ This is the heart of QubeFit. It will run an MCMC process on a
         predefined model and will return the resulting chain of the posterior
@@ -161,7 +161,7 @@ class QubeFit(Qube):
         nruns (int|default: 100)
             The number of runs in the MCMC chain analysis.
 
-        Nprocesses (int|default: None)
+        nproc (int|default: None)
             If set to an integer, it determines the number of processes to
             spawn. if None, the code will determine the optimum number of
             processes to spawn to distribute over the available CPU cores.
@@ -191,7 +191,7 @@ class QubeFit(Qube):
 
         # define the sampler
         os.environ["OMP_NUM_THREADS"] = "1"
-        with Pool(Nprocesses) as pool:
+        with Pool(nproc) as pool:
             sampler = emcee.EnsembleSampler(nwalkers, self.mcmcdim,
                                             __lnprob__, pool=pool,
                                             kwargs=kwargs)
@@ -203,7 +203,7 @@ class QubeFit(Qube):
             # run the mcmc chain
             sampler.run_mcmc(p0, nruns, progress=True)
 
-        # Now store the results into an array
+        # Now store the results into the structure
         self.mcmcarray = sampler.chain
 
         return sampler
