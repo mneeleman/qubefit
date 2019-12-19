@@ -4,6 +4,7 @@ import copy
 from astropy.io import fits
 from astropy.modeling import models, fitting
 import matplotlib.pyplot as plt
+import matplotlib.backends.backend_pdf
 import astropy.units as u
 from astropy import constants as const
 from astropy.table import Table
@@ -12,7 +13,8 @@ from astropy.stats import sigma_clip
 
 
 class Qube(object):
-    """Class for the (hopefully) easy handeling of a variety of data cubes
+
+    """ Class for the (hopefully) easy handeling of a variety of data cubes
     primarily tested for sub-mm. In particular, CASA and AIPS fits files can
     be treated in a similar manner.
     """
@@ -40,11 +42,12 @@ class Qube(object):
         return self
 
     def __init__(self):
+
         # Attributes
         self.data = None
         self.header = None
 
-    def get_slice(self, xindex=None, yindex=None, zindex=None, **kwargs):
+    def get_slice(self, xindex=None, yindex=None, zindex=None):
 
         """ slice the data cube into smaller data cubes, this will update the
         header correctly.
@@ -96,11 +99,55 @@ class Qube(object):
         return Slice
 
     def calculate_sigma(self, ignorezero=True, fullarray=False, channels=None,
-                        **kwargs):
+                        plot=False, plotfile='./sigma_estimate.pdf', **kwargs):
 
         """ This function will fit a Gaussian to the data and return the
         sigma value. For multiple channels it will do the calculation for each
         channel and return an array of sigma values.
+
+        keywords:
+        ---------
+        ignorezero (Bool| True):
+            If set, this will ignore any zero values in the array for the
+            gaussian fitting. This is useful if masked values are set to
+            zero.
+
+        fullarray (Bool| False):
+            If set, the returned array will be a numpy array with the same
+            shape as the input data, where each point corresponds to the
+            sigma value of that channel
+
+        channels (list| None):
+            The list of channels to calculate the sigma value for. This can
+            be either a list or a numpy array. When not specfied or set to
+            None, the full range is taken.
+
+        plot (Bool| False):
+            If set a QA file is made of the Gaussian fits, to determine the
+            fit of the Gaussian.
+
+        plotfile (str| './sigma_estimate.pdf'):
+            The file in which to save the sigma QA plot.
+
+        doguess (Bool| True):
+            If set, the code will calculate the bin size and the intial
+            estimates for the gaussian fit
+
+        gausspar (list| None):
+            If a list is given it is taken as the initial guesses for the
+            Gaussian fit. This has to be set with the number of bins for
+            the histogram, otherwise doguess has to be set to True (which
+            will overwrite the values given here)
+
+        bins (int| None):
+            The numbe of bins to use in the histogram. If not set, doguess
+            needs to be set, which calculates this value.
+
+        Returns:
+        --------
+        float or nd.array of the sigma for each requested channel.
+        if full array is set, it will generate a new instance of Qube and
+        will return the array in the 'data' attribute for this Qube.
         """
 
         # either 2D or 3D case
@@ -111,8 +158,18 @@ class Qube(object):
             if ignorezero:
                 Data = Data[np.where(Data != 0)]
 
+            # if qa plot is wanted
+            if plot:
+                fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+                kwargs['ax'] = ax
+
             # fit the data
             g = __fit_gaussian__(Data, **kwargs)
+
+            # save and close the plot
+            if plot:
+                plt.savefig(plotfile, format='pdf', dpi=300)
+                plt.close()
 
             # get sigma
             Sigma = g.stddev.value
@@ -123,6 +180,10 @@ class Qube(object):
             if channels is None:
                 channels = np.arange(0, self.data.shape[-3])
 
+            # if qa plot is wanted
+            if plot:
+                pdf = matplotlib.backends.backend_pdf.PdfPages(plotfile)
+
             Sigma = []
             for channel in channels:
                 Data = self.data[channel, :, :]
@@ -130,12 +191,24 @@ class Qube(object):
                 if ignorezero:
                     Data = Data[np.where(Data != 0)]
 
+                if plot:
+                    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+                    kwargs['ax'] = ax
+                    kwargs['channel'] = channel
+                    print(kwargs)
+
                 # fit the data and get sigma
                 if Data != []:
                     g = __fit_gaussian__(Data, **kwargs)
                     Sigma.append(g.stddev.value)
+                    if plot:
+                        pdf.savefig(fig)
                 else:
                     Sigma.append(0)
+
+            # close the plot
+            if plot:
+                pdf.close()
 
             # convert to numpy array
             Sigma = np.array(Sigma)
@@ -368,22 +441,28 @@ class Qube(object):
         """
         Generate a 1D spectrum from the Cube
 
-        Parameters:
-            convention: (String | 'Radio') Which Doppler convention to use
-            to calculate the velocities.
+        keywords:
+        ---------
 
-            continuumcorrect: (Bool | False) Will correct the spectrum for any
-            potential continuum flux by fitting a second order polynomial to
-            the spectrum outside the channels given by limits.
+        convention: (String | 'Radio'):
+            Which Doppler convention to use to calculate the velocities.
 
-            limits: (tuple | None) Two-element tuple which contains
-            the limits outside which the continuum can be fit.
+        continuumcorrect: (Bool | False):
+            Will correct the spectrum for any potential continuum flux by
+            fitting a second order polynomial to the spectrum outside the
+            channels given by limits.
 
-            beamcorrect: (Bool | False) Correct the flux by dividing by the
-            area of the beam. This should be the default when dealing with
-            interferometric data in Jy/beam.
+        limits: (tuple | None):
+            Two-element tuple which contains the limits outside which the
+            continuum can be fit.
+
+        beamcorrect: (Bool | False):
+            Correct the flux by dividing by the area of the beam. This
+            should be the default when dealing with interferometric data
+            in Jy/beam.
 
         Returns:
+        --------
             np.ndarray, np.ndarray: Summed flux and 'Velocity'
         """
 
@@ -582,18 +661,20 @@ class Qube(object):
         the user to get the velocities of a certain channel or fraction of a
         channel.
 
-        inputs:
-        self:       qube with the header information needed to covert the pixel
-                    values.
-        convention: convention used for converting the frequencies to
-                    velocities. Default is 'radio' but can also be
-                    'optical', 'relativistic' and 'frequency', in the latter
-                    the frequency array/value is returned.
-        channels:   If None then get velocities of the full array. If set,
-                    only the velocities of those channels are returned.
+        keywords:
+        ---------
+        convention (str|default: 'radio')
+            The convention used for converting the frequencies to velocities.
+            Default is 'radio' but can also be 'optical', 'relativistic' and
+            'frequency', in the latter the frequency array/value is returned.
+        channels (list|default: None):
+            If None then get velocities for all of the channels in the data
+            array. otherwise only the velocities of those channels that are
+            specfied are returned.
 
         Returns:
-            np.ndarray:  Velocity values in km/s
+        --------
+            np.ndarray:  Velocity values (in km/s or Hz)
         """
 
         # get the channels/values to convert
@@ -612,7 +693,8 @@ class Qube(object):
         elif self.header['CTYPE3'] == 'AWAV':
             FreqArr = (const.c / (Arr * u.AA)).to(u.Hz)
         elif self.header['CTYPE3'] == 'VOPT':
-            Velocity = u.Quantity(Arr, unit=self.header['CUNIT3']).to('km/s').value
+            Velocity = u.Quantity(Arr,
+                                  unit=self.header['CUNIT3']).to('km/s').value
             return Velocity
         else:
             raise ValueError(self.header['CTYPE3'])
@@ -761,7 +843,6 @@ class Qube(object):
                     self.header.insert('History',
                                        ('BPA', float(line.split()[7])))
 
-
     def __KCWIfix__(self):
 
         # add RESTFRQ keyword to the header
@@ -778,7 +859,6 @@ class Qube(object):
         self.header.set('BMIN', 1.0 / 3600.)
         self.header.set('BPA',  0.0)
 
-
     def __get_velocitywidth__(self, **kwargs):
 
         """ small function that will get the velocities and calculate the
@@ -790,8 +870,8 @@ class Qube(object):
 
 
 # some auxilliary functions not directly part of the Qube class
-def __fit_gaussian__(data, doguess=True, bins=None, gausspar=None,
-                     plot=False, **kwargs):
+def __fit_gaussian__(data, doguess=True, gausspar=None, bins=None,
+                     ax=None, channel=0):
 
     # parse only the finite data
     data = data[np.isfinite(data)]
@@ -821,24 +901,22 @@ def __fit_gaussian__(data, doguess=True, bins=None, gausspar=None,
     fit_g = fitting.LevMarLSQFitter()
     g = fit_g(g_init, xval, hist)
 
-    if plot:
-        __make_sigplot__(g.stddev.value, xval, hist, g, bins)
+    if ax is not None:
+        __make_sigplot__(g.stddev.value, xval, hist, g, bins, ax, channel)
 
     return g
 
 
-def __make_sigplot__(sigma, xval, hist, g, bins):
+def __make_sigplot__(sigma, xval, hist, g, bins, ax, channel):
 
-    fig = plt.figure()
-    ax = fig.add_axes([0, 0, 1, 1])
-    plt.plot(xval, hist, 'o')
-    plt.plot(xval, g(xval), label='Gaussian')
+    ax.plot(xval, hist, 'o')
+    ax.plot(xval, g(xval), label='Gaussian')
     if np.isfinite(np.min(xval)+np.max(xval)):
-        plt.xlim([np.min(xval), np.max(xval)])
-    plt.text(0.02, 0.9, 'Gaussian sigma is: {:.2e} Jy/beam'.format(sigma),
-             transform=ax.transAxes)
-    plt.legend(loc=1)
-    plt.show()
+        ax.xlim([np.min(xval), np.max(xval)])
+    ax.text(0.02, 0.8, 'Gaussian sigma is: {:.4g}'.format(sigma),
+            transform=ax.transAxes)
+    ax.legend(loc=1)
+    ax.text(0.02, 0.8, 'Channel: {}'.format(str(channel)))
 
 
 def __correct_flux__(flux, vel, limits):
