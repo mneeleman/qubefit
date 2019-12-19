@@ -195,7 +195,6 @@ class Qube(object):
                     fig, ax = plt.subplots(1, 1, figsize=(6, 6))
                     kwargs['ax'] = ax
                     kwargs['channel'] = channel
-                    print(kwargs)
 
                 # fit the data and get sigma
                 if Data != []:
@@ -912,11 +911,12 @@ def __make_sigplot__(sigma, xval, hist, g, bins, ax, channel):
     ax.plot(xval, hist, 'o')
     ax.plot(xval, g(xval), label='Gaussian')
     if np.isfinite(np.min(xval)+np.max(xval)):
-        ax.xlim([np.min(xval), np.max(xval)])
-    ax.text(0.02, 0.8, 'Gaussian sigma is: {:.4g}'.format(sigma),
+        ax.set_xlim([np.min(xval), np.max(xval)])
+    ax.text(0.02, 0.95, 'Gaussian sigma is: {:.3e}'.format(sigma),
             transform=ax.transAxes)
     ax.legend(loc=1)
-    ax.text(0.02, 0.8, 'Channel: {}'.format(str(channel)))
+    ax.text(0.02, 1.03, 'Channel: {}'.format(str(channel)),
+            transform=ax.transAxes)
 
 
 def __correct_flux__(flux, vel, limits):
