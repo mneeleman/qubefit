@@ -94,6 +94,8 @@ class QubeFit(Qube):
         kernelarea = Bmaj * Bmin * 2 * np.pi
         if channels is not None:
             kernelarea = kernelarea[channels]
+        if len(kernelarea) == 1:
+            kernelarea = kernelarea[0]
         self.kernelarea = kernelarea
 
     def load_initialparameters(self, Parameters):
