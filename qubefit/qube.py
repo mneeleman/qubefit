@@ -71,19 +71,23 @@ class Qube(object):
         elif type(zindex) is tuple:
             zindex = np.arange(zindex[0], zindex[1])
 
-        # crop the data
-        if Slice.data.ndim == 2:
-            Slice.data = Slice.data[yindex[:, np.newaxis],
-                                    xindex[np.newaxis, :]]
-        elif Slice.data.ndim == 3:
-            Slice.data = Slice.data[zindex[:, np.newaxis, np.newaxis],
-                                    yindex[np.newaxis, :, np.newaxis],
-                                    xindex[np.newaxis, np.newaxis, :]]
-        else:
-            raise ValueError('Cannot crop data with this dimension - yet')
-
-        # squeeze if needed
-        Slice.data = np.squeeze(Slice.data)
+        # crop the data, model and sigma/variance cubes
+        # NOTE: THE DATA COLUMN HAS TO BE PRESENT
+        for attr in ['data', 'model', 'sig', 'variance']:
+            if hasattr(Slice, attr):
+                temp = getattr(Slice, attr)
+                if temp.ndim == 2:
+                    temp = temp[yindex[:, np.newaxis], xindex[np.newaxis, :]]
+                    temp = np.squeeze(temp)
+                    setattr(Slice, attr, temp)
+                elif Slice.data.ndim == 3:
+                    temp = temp[zindex[:, np.newaxis, np.newaxis],
+                                yindex[np.newaxis, :, np.newaxis],
+                                xindex[np.newaxis, np.newaxis, :]]
+                    temp = np.squeeze(temp)
+                    setattr(Slice, attr, temp)
+                else:
+                    raise ValueError('Unable to crop data with this dimension')
 
         # now fix the coordinates in the header
         Slice.header['CRPIX1'] = Slice.header['CRPIX1'] - np.min(xindex)

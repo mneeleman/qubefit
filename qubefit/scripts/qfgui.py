@@ -24,6 +24,8 @@ class ApplicationWindow(QtWidgets.QWidget):
     def initQube(self, modelfile):
         Model = importlib.import_module(modelfile)
         self.qube = Model.set_model()
+        if not hasattr(self.qube, 'file'):
+            self.file = 'Not specified'
         self.title = ('Looking at file: ' + self.qube.file + ' with model: ' +
                       self.qube.modelname)
         self.channel = 0
@@ -32,8 +34,11 @@ class ApplicationWindow(QtWidgets.QWidget):
         self.vmin = -3 * self.rmsval
         self.vmax = 11 * self.rmsval
         self.cmap = 'RdYlBu_r'
-        self.contours = np.array([2, 3, 6, 9, 12])
+        self.contours = np.array([-6, -3, -2, 2, 3, 6, 9, 12])
         self.ccolor = 'black'
+        if not hasattr(self.qube, 'maskarray'):
+            self.maskarray = np.ones_like(self.qube.data)
+        self.chisquared = self.qube.calculate_chisquared()
 
     def initUI(self):
         self.setWindowTitle(self.title)
@@ -148,6 +153,16 @@ class ApplicationWindow(QtWidgets.QWidget):
         self.levelcolor.setToolTip('The color of the contours')
         self.levelcolor.returnPressed.connect(self.update_levelcolor)
 
+        # plot mask button
+        self.mask = QtWidgets.QCheckBox('Plot mask')
+        self.mask.setToolTip('Plot the mask used for the fitting.')
+        self.mask.clicked.connect(self.update_figures)
+
+        # plot chi squared value
+        self.chisq = QtWidgets.QLabel(self)
+        self.chisq.setText('Red. Chi-Squared: ' +
+                           '{:10.7f}'.format(self.chisquared))
+
         # create layout
         layout = QtWidgets.QGridLayout()
         layout.addWidget(self.min_label, 0, 0)
@@ -161,6 +176,8 @@ class ApplicationWindow(QtWidgets.QWidget):
         layout.addWidget(self.colormap, 0, 5)
         layout.addWidget(self.levelcolor_label, 1, 4)
         layout.addWidget(self.levelcolor, 1, 5)
+        layout.addWidget(self.mask, 0, 6)
+        layout.addWidget(self.chisq, 1, 6)
         self.controls.setLayout(layout)
 
     def get_canvas1_layout(self):
@@ -306,6 +323,9 @@ class ApplicationWindow(QtWidgets.QWidget):
             self.qube.load_initialparameters(self.qube.initpar)
             self.qube.create_model()
             self.update_figures()
+            self.chisquared = self.qube.calculate_chisquared()
+            self.chisq.setText('Red. Chi-Squared: ' +
+                               '{:10.7f}'.format(self.chisquared))
 
     def update_parametervalue(self, key, idx):
         try:
@@ -366,6 +386,10 @@ class ApplicationWindow(QtWidgets.QWidget):
             data = self.qube.data - self.qube.model
         else:
             data = None
+
+        if self.mask.isChecked() and data is not None:
+            data = data * self.qube.maskarray
+
         return data
 
 
