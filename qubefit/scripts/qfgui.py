@@ -12,18 +12,18 @@ import matplotlib.pyplot as plt
 
 class ApplicationWindow(QtWidgets.QWidget):
 
-    def __init__(self, modelfile):
+    def __init__(self, modelfile, *args):
         super().__init__()
         self.left = 20
         self.top = 50
         self.width = 1500
         self.height = 1000
-        self.initQube(modelfile)
+        self.initQube(modelfile, *args)
         self.initUI()
 
     def initQube(self, modelfile):
         Model = importlib.import_module(modelfile)
-        self.qube = Model.set_model()
+        self.qube = Model.set_model(*args)
         if not hasattr(self.qube, 'file'):
             self.file = 'Not specified'
         self.title = ('Looking at file: ' + self.qube.file + ' with model: ' +
@@ -395,16 +395,26 @@ class ApplicationWindow(QtWidgets.QWidget):
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    if len(sys.argv) != 2:
+    if len(sys.argv) <= 2:
         print(sys.argv)
         print('Please supply the python script that defines the model')
         sys.exit()
-    else:
+    elif len(sys.argv) == 2:
         if sys.argv[1].endswith('.py'):
             sys.argv[1] = sys.argv[1][:-3]
         AppWin = ApplicationWindow(sys.argv[1])
         AppWin.show()
         sys.exit(app.exec_())
+    elif len(sys.argv) == 3:
+        if sys.argv[1].endswith('.py'):
+            sys.argv[1] = sys.argv[1][:-3]
+        AppWin = ApplicationWindow(sys.argv[1], sys.argv[2])
+        AppWin.show()
+        sys.exit(app.exec_())
+    else:
+        print(sys.argv)
+        print('Too many arguments supplied to the funcion.')
+        sys.exit()
 
 
 def __arrtostr__(array):
