@@ -21,7 +21,7 @@ class ApplicationWindow(QtWidgets.QWidget):
         self.initQube(modelfile, *args)
         self.initUI()
 
-    def initQube(self, modelfile):
+    def initQube(self, modelfile, *args):
         Model = importlib.import_module(modelfile)
         self.qube = Model.set_model(*args)
         if not hasattr(self.qube, 'file'):
