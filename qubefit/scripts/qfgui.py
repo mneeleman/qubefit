@@ -395,7 +395,7 @@ class ApplicationWindow(QtWidgets.QWidget):
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    if len(sys.argv) <= 2:
+    if len(sys.argv) < 2:
         print(sys.argv)
         print('Please supply the python script that defines the model')
         sys.exit()
