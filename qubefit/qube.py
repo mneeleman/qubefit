@@ -80,7 +80,7 @@ class Qube(object):
                     temp = temp[yindex[:, np.newaxis], xindex[np.newaxis, :]]
                     temp = np.squeeze(temp)
                     setattr(Slice, attr, temp)
-                elif Slice.data.ndim == 3:
+                elif temp.ndim == 3:
                     temp = temp[zindex[:, np.newaxis, np.newaxis],
                                 yindex[np.newaxis, :, np.newaxis],
                                 xindex[np.newaxis, np.newaxis, :]]
@@ -201,7 +201,8 @@ class Qube(object):
                     kwargs['channel'] = channel
 
                 # fit the data and get sigma
-                if Data != []:
+                goodidx = np.where((Data != 0) * (np.isfinite(Data)))
+                if goodidx != np.array([]):
                     g = __fit_gaussian__(Data, **kwargs)
                     Sigma.append(g.stddev.value)
                     if plot:
