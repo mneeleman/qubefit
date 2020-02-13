@@ -20,7 +20,7 @@ def ThinDisk(**kwargs):
     'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Disp' (optionally one can also
     define an index for the functions if a range of functions is needed, e.g.,
     Sersic profiles for intensity.). Curretly only the IntensityIndex (IIdx)
-    is defined.
+    and VelocityIndex (VIdx) are defined.
     """
 
     # get the polar coordinates in the plane of the sky (non-prime) and
@@ -37,8 +37,13 @@ def ThinDisk(**kwargs):
     else:
         IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
                 (RPrime, kwargs['par']['Rd']) * kwargs['par']['I0'])
-    VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
-            (RPrime, kwargs['par']['Rv']) * kwargs['par']['Vmax'])
+    if 'VIdx' in kwargs['par'].keys():
+        VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
+                (RPrime, kwargs['par']['Rv'], kwargs['par']['VIdx']) * 
+                kwargs['par']['Vmax'])
+    else:
+        VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
+                (RPrime, kwargs['par']['Rv']) * kwargs['par']['Vmax'])
     VMap = __get_centralvelocity__(Phi, VDep, **kwargs)
     DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
             (RPrime, kwargs['par']['Rv']) * kwargs['par']['Disp'])
@@ -432,9 +437,9 @@ def _Step_(X, X0):
     return Arr
 
 
-def _Power_(X, X0, power=-0.5):
+def _Power_(X, X0, N):
 
-    return np.power((X / X0), power)
+    return np.power((X / X0), N)
 
 
 def _Atan_(X, X0):
