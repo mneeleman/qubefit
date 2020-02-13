@@ -20,7 +20,7 @@ def ThinDisk(**kwargs):
     'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Disp' (optionally one can also
     define an index for the functions if a range of functions is needed, e.g.,
     Sersic profiles for intensity.). Curretly only the IntensityIndex (IIdx)
-    is defined.
+    and VelocityIndex (VIdx) are defined.
     """
 
     # get the polar coordinates in the plane of the sky (non-prime) and
