@@ -173,7 +173,7 @@ class Qube(object):
             # save and close the plot
             if plot:
                 plt.savefig(plotfile, format='pdf', dpi=300)
-                plt.close()
+                plt.close('all')
 
             # get sigma
             Sigma = g.stddev.value
@@ -207,6 +207,7 @@ class Qube(object):
                     Sigma.append(g.stddev.value)
                     if plot:
                         pdf.savefig(fig)
+                        plt.close('all')
                 else:
                     Sigma.append(0)
 
@@ -697,6 +698,10 @@ class Qube(object):
         elif self.header['CTYPE3'] == 'AWAV':
             FreqArr = (const.c / (Arr * u.AA)).to(u.Hz)
         elif self.header['CTYPE3'] == 'VOPT':
+            Velocity = u.Quantity(Arr,
+                                  unit=self.header['CUNIT3']).to('km/s').value
+            return Velocity
+        elif self.header['CTYPE3'] == 'VRAD':
             Velocity = u.Quantity(Arr,
                                   unit=self.header['CUNIT3']).to('km/s').value
             return Velocity
