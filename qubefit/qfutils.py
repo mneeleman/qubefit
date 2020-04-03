@@ -205,8 +205,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
         if clevels is None:
             raise ValueError('Set the contour levels (clevels) keyword.')
 
-        ax.contour(xc, yc, contour.data, levels=clevels, colors=ccolor,
-                   linewidths=2)
+        ax.contour(xc, yc, contour.data, levels=clevels, colors=ccolor)
 
     # the beam
     if beam:

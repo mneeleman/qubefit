@@ -465,6 +465,14 @@ def _Sech2_(X, X0):
     return (1. / np.cos(-1. * X / X0))**2
 
 
+def _ExpConst_(X, X0):
+
+    return (1 + 1.5 * np.exp(-3 * X / X0))
+
+
+def _Custom_(X, X0):
+
+    return (np.power((X / X0), -0.5) * 0.3888 + 1.)
 ##############################################################
 
 
