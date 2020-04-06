@@ -176,10 +176,8 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
                 vscale = (vrange[1] - vrange[0]) / 5.
 
             if cbaraxis is not None:
-                norm = mpl.colors.Normalize(vmin=vrange[0], vmax=vrange[1])
-                cmapo = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-                ticks = np.arange(-10, 10) * vscale
-                cbr = plt.colorbar(cmapo, cax=cbaraxis, ticks=ticks)
+                cbr = fig.colorbar(im, ticks=np.arange(-10, 10) * vscale,
+                                   ax=cbaraxis)
             else:
                 cbr = fig.colorbar(im, ticks=np.arange(-10, 10) * vscale,
                                    ax=ax)
@@ -341,6 +339,7 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
     # now do the color bar
     norm = mpl.colors.Normalize(vmin=vrange[0], vmax=vrange[1])
     cmapo = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    cmapo.set_array([])
     if vscale is None:
         vscale = (vrange[1] - vrange[0]) / 5.
     cbr = plt.colorbar(cmapo, cax=grid.cbar_axes[0],
@@ -363,7 +362,7 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
 def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
                      cornerplot=True, momentmaps=True, bestarray=False,
                      outname='model', vrangecm=None, vrangemom=None,
-                     cmap0='RdYlBu_r', cmap1='Spectral_r', cmap2='RdYlBu_r',
+                     cmap0='RdYlBu_r', cmap1='Spectral_r', cmap2='copper_r',
                      maskvalue=3.0, **kwargs):
 
     """ This program will create several diagnostic plots of a given model
@@ -514,9 +513,9 @@ def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
         # plot the color bar
         norm = mpl.colors.Normalize(vmin=vrangemom[0], vmax=vrangemom[1])
         cmapo = plt.cm.ScalarMappable(cmap=cmap0, norm=norm)
+        cmapo.set_array([])
         cbr = plt.colorbar(cmapo, cax=grid.cbar_axes[0])
         cbr.ax.set_ylabel('Moment-0', labelpad=-1)
-
         plt.savefig(outname + '_moment0.pdf', format='pdf', dpi=300)
         plt.close()
 
@@ -543,6 +542,7 @@ def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
         # plot the color bar
         norm = mpl.colors.Normalize(vmin=vrangemom1[0], vmax=vrangemom1[1])
         cmapo = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
+        cmapo.set_array([])
         cbr = plt.colorbar(cmapo, cax=grid.cbar_axes[0])
         cbr.ax.set_ylabel('Moment-1', labelpad=-1)
 
@@ -561,8 +561,20 @@ def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
                          cbar_mode='single', cbar_location='right')
 
         # plot the figures
-        standardfig(raster=dMom2, ax=grid[0], fig=fig, cmap=cmap1)
-        standardfig(raster=mMom2, ax=grid[1], fig=fig, cmap=cmap1, beam=False)
+        vrangemom2 = [np.nanmin(dMom2.data), np.nanmax(dMom2.data)]
+        standardfig(raster=dMom2, ax=grid[0], fig=fig, cmap=cmap2,
+                    vrange=vrangemom2, text='Data',
+                    textprop=[dict(size=12)], **kwargs)
+        standardfig(raster=mMom2, ax=grid[1], fig=fig, cmap=cmap2,
+                    vrange=vrangemom2, beam=False, text='Model',
+                    textprop=[dict(size=12)], **kwargs)
+
+        # plot the color bar
+        norm = mpl.colors.Normalize(vmin=vrangemom2[0], vmax=vrangemom2[1])
+        cmapo = plt.cm.ScalarMappable(cmap=cmap2, norm=norm)
+        cmapo.set_array([])
+        cbr = plt.colorbar(cmapo, cax=grid.cbar_axes[0])
+        cbr.ax.set_ylabel('Moment-2', labelpad=-1)
 
         plt.savefig(outname + '_moment2.pdf', format='pdf', dpi=300)
         plt.close()
