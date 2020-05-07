@@ -539,7 +539,7 @@ def __get_lnprob__(residual, **kwargs):
     Here the second part is really not necessary as it is a constant term and
     the log likelihood is insensitive to constant additive factors. We assume
     that the PSF/beam is Nyquist sampled, meaning that we have 2 independent
-    measurements per FWHM (this corresponds to 4/ln(2) indepdent measurements
+    measurements per FWHM (this corresponds to 4/ln(2) independent measurements
     per kernelarea. The approximate size of the independent measurement is
     therefore kernelarea / 4/ln(2). The chi-squared function should be divided
     by this to get the log likelihood funtion:
@@ -547,7 +547,7 @@ def __get_lnprob__(residual, **kwargs):
     -0.5 * ChiSquared / Nyquist, where Nyquist = kernelarea / (4 / ln(2))
 
     NOTE: Currently the prior distributions are not multiplied through instead
-    they are taken as either -inf or 1. This is ok for uniformed priors but
+    they are taken as either -inf or 1. This is ok for uninformed priors but
     NOT correct for other priors.
     """
 

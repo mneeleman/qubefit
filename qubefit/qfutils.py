@@ -176,8 +176,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
                 vscale = (vrange[1] - vrange[0]) / 5.
 
             if cbaraxis is not None:
-                cbr = fig.colorbar(im, ticks=np.arange(-10, 10) * vscale,
-                                   ax=cbaraxis)
+                cbr = cbaraxis.colorbar(im, ticks=np.arange(-10, 10) * vscale)
             else:
                 cbr = fig.colorbar(im, ticks=np.arange(-10, 10) * vscale,
                                    ax=ax)

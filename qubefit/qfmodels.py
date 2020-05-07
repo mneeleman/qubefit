@@ -17,10 +17,10 @@ def ThinDisk(**kwargs):
 
     """ This will create a 'thin disk' model from the stored parameters
     specified in kwargs. Variables that should be defined are: 'Xcen', 'Ycen',
-    'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Disp' (optionally one can also
-    define an index for the functions if a range of functions is needed, e.g.,
-    Sersic profiles for intensity.). Curretly only the IntensityIndex (IIdx)
-    and VelocityIndex (VIdx) are defined.
+    'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Vcen', 'Disp' (optionally one
+    can also define an index for the functions if a range of functions is
+    needed, e.g., Sersic profiles for intensity.). Currently only the
+    IntensityIndex (IIdx) and VelocityIndex (VIdx) are defined.
     """
 
     # get the polar coordinates in the plane of the sky (non-prime) and
@@ -67,6 +67,125 @@ def ThinDisk(**kwargs):
     return Model
 
 
+def DispersionBulge(**kwargs):
+
+    """ This will create a simple model where the emission is not rotating,
+    and the velocity across the emission profile is set to  the systemic
+    velocity of the emission. Variables that should be defined in kwargs
+    are the x-y positions of the center ('Xcen', 'Ycen') as well as the
+    central velocity ('Vcen'). The intensity profile is assumed to be
+    radial and defined by ('I0' and 'Rd'). Optionally one can also define a
+    spectral index (IIdx; e.g., for a Sersic function). Finally the dispersion
+    profile is determined by two parameters ('Disp' and 'Rv').
+    """
+
+    # get the polar coordinates in the plane of the sky
+    R, Phi = __get_coordinates__(twoD=True, rotate=False, **kwargs)
+
+    # the intensity and dispersion profile
+    if 'IIdx' in kwargs['par'].keys():
+        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                (R, kwargs['par']['Rd'], kwargs['par']['IIdx']) *
+                kwargs['par']['I0'])
+    else:
+        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                (R, kwargs['par']['Rd']) * kwargs['par']['I0'])
+        DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
+                (R, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+
+    # convert these maps into 3d matrices
+    # also generate a velocity array (Z-array) which contains the
+    # z pixel number (i.e., velocity) per slice
+    ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
+    DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
+    VCube = np.full(kwargs['shape'], kwargs['par']['Vcen'])
+    ZCube = np.tile(np.arange(kwargs['shape'][-3])[:, np.newaxis, np.newaxis],
+                    (1, kwargs['shape'][-2], kwargs['shape'][-1]))
+
+    # create the model
+    Model = (ICube * np.exp(-1 * (ZCube - VCube)**2 / (2 * DCube**2)))
+
+    # Convolve
+    if kwargs['convolve']:
+        Model = convolve(Model, kwargs['kernel'])
+
+    return Model
+
+
+def ThinSpiral(**kwargs):
+
+    """ This will create a 'thin disk' model with a spiral pattern overlaid
+    on the radial profile from the stored parameters
+    specified in kwargs. Variables that should be defined are: 'Xcen', 'Ycen',
+    'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Vcen', 'Disp' (optionally one can
+    also define an index for the functions if a range of functions is
+    needed, e.g., Sersic profiles for intensity.). Currently only the
+    IntensityIndex (IIdx) is defined. For the spiral pattern the follwing
+    parameters should be given: tnumber of spirals (Nspiral), starting
+    position of first spiral (Phi0), the tightness of spiral (Spcoef),
+    the thickness of the spiral (Dphi), the fractional intensity (Ispf),
+    and the cut-off radius (Rs).
+    """
+
+    # get the polar coordinates in the plane of the sky (non-prime) and
+    # in the plane of the disk (prime).
+    R, Phi, RPrime, PhiPrime = __get_coordinates__(twoD=True, **kwargs)
+
+    # get the radial, velocity, and dispersion maps (these are 2D in
+    # the plane of the sky)
+    # note that VMap is based on the "sky angle" (Phi)
+    if 'IIdx' in kwargs['par'].keys():
+        IM1 = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+               (RPrime, kwargs['par']['Rd'], kwargs['par']['IIdx']))
+    else:
+        IM1 = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+               (RPrime, kwargs['par']['Rd']))
+
+    #  spiral arm density profile
+    IM2 = 0
+    for idx in np.arange(kwargs['par']['Nspiral']):
+        # find the starting phi at R=0
+        CPhi0 = (kwargs['par']['Phi0'] +
+                 (2 * np.pi) / kwargs['par']['Nspiral'] * idx)
+        CPhi = CPhi0 + kwargs['par']['Spcoef'] * RPrime
+        CPhi = np.mod(CPhi, 2 * np.pi)
+        # CPhi[np.where(CPhi > np.pi)] -= 2 * np.pi
+        IM2 += np.exp(-0.5 * (PhiPrime - CPhi)**2 / kwargs['par']['Dphi']**2)
+
+    IM2 *= kwargs['par']['Ispf']
+    IM2 *= eval('_Step_')(RPrime, kwargs['par']['Rs'])
+
+    # add the disk and the spiral arm structure and mux by the z-profile
+    IMap = IM1 + IM2
+    IMap *= kwargs['par']['I0']
+
+    # velocity and dispersion maps
+    VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
+            (RPrime, kwargs['par']['Rv']) * kwargs['par']['Vmax'])
+    VMap = __get_centralvelocity__(Phi, VDep, **kwargs)
+    DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
+            (RPrime, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+
+    # convert these maps into 3d matrices
+    # also generate a velocity array (Z-array) which contains the
+    # z pixel number (i.e., velocity) per slice
+    ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
+    VCube = np.tile(VMap, (kwargs['shape'][-3], 1, 1))
+    DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
+    ZCube = np.tile(np.arange(kwargs['shape'][-3])[:, np.newaxis, np.newaxis],
+                    (1, kwargs['shape'][-2], kwargs['shape'][-1]))
+
+    # create the model
+    Model = (ICube * np.exp(-1 * (ZCube - VCube)**2 / (2 * DCube**2)))
+
+    # Convolve
+    if kwargs['convolve']:
+        Model = convolve(Model, kwargs['kernel'])
+
+    return Model
+
+
+# THE FOLLOWING PROFILES HAVE NOT BEEN TESTED AND HAVE SOME BUGS IN THEM
 def ThickDisk(**kwargs):
 
     """ This will create a 'thick disk' model from the stored parameters
@@ -343,78 +462,6 @@ def SpiralGalaxy(Convolve=True, **kwargs):
 
     return Model
 
-
-def ThinSpiral(**kwargs):
-
-    """ This will create a 'thin disk' model with a spiral pattern overlaid
-    on the radial profile from the stored parameters
-    specified in kwargs. Variables that should be defined are: 'Xcen', 'Ycen',
-    'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Disp' (optionally one can also
-    define an index for the functions if a range of functions is needed, e.g.,
-    Sersic profiles for intensity.). Currently only the IntensityIndex (IIdx)
-    is defined. For the spiral pattern the follwing parameters should be given:
-    tnumber of spirals (Nspiral), starting position of first spiral (Phi0),
-    the tightness of spiral (Spcoef), the thickness of the spiral (Dphi),
-    the fractional intensity (Ispf) and the cut-off radius (Rs).
-    """
-
-    # get the polar coordinates in the plane of the sky (non-prime) and
-    # in the plane of the disk (prime).
-    R, Phi, RPrime, PhiPrime = __get_coordinates__(twoD=True, **kwargs)
-
-    # get the radial, velocity, and dispersion maps (these are 2D in
-    # the plane of the sky)
-    # note that VMap is based on the "sky angle" (Phi)
-    if 'IIdx' in kwargs['par'].keys():
-        IM1 = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-               (RPrime, kwargs['par']['Rd'], kwargs['par']['IIdx']))
-    else:
-        IM1 = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-               (RPrime, kwargs['par']['Rd']))
-
-    #  spiral arm density profile
-    IM2 = 0
-    for idx in np.arange(kwargs['par']['Nspiral']):
-        # find the starting phi at R=0
-        CPhi0 = (kwargs['par']['Phi0'] +
-                 (2 * np.pi) / kwargs['par']['Nspiral'] * idx)
-        CPhi = CPhi0 + kwargs['par']['Spcoef'] * RPrime
-        CPhi = np.mod(CPhi, 2 * np.pi)
-        # CPhi[np.where(CPhi > np.pi)] -= 2 * np.pi
-        IM2 += np.exp(-0.5 * (PhiPrime - CPhi)**2 / kwargs['par']['Dphi']**2)
-
-    IM2 *= kwargs['par']['Ispf']
-    IM2 *= eval('_Step_')(RPrime, kwargs['par']['Rs'])
-
-    # add the disk and the spiral arm structure and mux by the z-profile
-    IMap = IM1 + IM2
-    IMap *= kwargs['par']['I0']
-
-    # velocity and dispersion maps
-    VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
-            (RPrime, kwargs['par']['Rv']) * kwargs['par']['Vmax'])
-    VMap = __get_centralvelocity__(Phi, VDep, **kwargs)
-    DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
-            (RPrime, kwargs['par']['Rv']) * kwargs['par']['Disp'])
-
-    # convert these maps into 3d matrices
-    # also generate a velocity array (Z-array) which contains the
-    # z pixel number (i.e., velocity) per slice
-    ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
-    VCube = np.tile(VMap, (kwargs['shape'][-3], 1, 1))
-    DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
-    ZCube = np.tile(np.arange(kwargs['shape'][-3])[:, np.newaxis, np.newaxis],
-                    (1, kwargs['shape'][-2], kwargs['shape'][-1]))
-
-    # create the model
-    Model = (ICube * np.exp(-1 * (ZCube - VCube)**2 / (2 * DCube**2)))
-
-    # Convolve
-    if kwargs['convolve']:
-        Model = convolve(Model, kwargs['kernel'])
-
-    return Model
-
 ##############################################################
 # Available profiles for Intensity, Velocity, and Dispersion #
 
@@ -480,7 +527,7 @@ def _Custom_(X, X0):
 # Under the hood functions for the models #
 
 
-def __get_coordinates__(twoD=False, **kwargs):
+def __get_coordinates__(twoD=False, rotate=True, **kwargs):
 
     """ This will generate a set of cylindrical coordinates, rotated by
     the paralactic angle and the inclination. It returns both the sky
@@ -503,25 +550,27 @@ def __get_coordinates__(twoD=False, **kwargs):
         Y = (np.mgrid[0:kwargs['shape'][-2], 0: kwargs['shape'][-1]][-2] -
              kwargs['par']['Ycen']).astype(float)
 
-        R, Phi = __cartesian2polar__(X, Y, **kwargs)
+        R, Phi = __cartesian2polar__(X, Y)
 
-        # now do the transformation into the frame of the galaxy
-        XPrime = (-1 * R * np.sin(Phi - kwargs['par']['PA']) /
-                  np.cos(kwargs['par']['Incl']))
-        YPrime = R * np.cos(Phi - kwargs['par']['PA'])
+        if rotate:
+            # now do the transformation into the frame of the galaxy
+            XPrime = (-1 * R * np.sin(Phi - kwargs['par']['PA']) /
+                      np.cos(kwargs['par']['Incl']))
+            YPrime = R * np.cos(Phi - kwargs['par']['PA'])
 
-        # Convert these to polar coordinates
-        RPrime, PhiPrime = __cartesian2polar__(XPrime, YPrime, **kwargs)
+            # Convert these to polar coordinates
+            RPrime, PhiPrime = __cartesian2polar__(XPrime, YPrime)
 
-        return R, Phi, RPrime, PhiPrime
-
+            return R, Phi, RPrime, PhiPrime
+        else:
+            return R, Phi
     else:
 
         # not ready for this yet
         raise NotImplementedError('Not ready for this yet...')
 
 
-def __cartesian2polar__(X, Y, **kwargs):
+def __cartesian2polar__(X, Y):
 
     """ simple function that converts cartesian coordinates, X and Y,
     to polar coordinates, R and Phi
@@ -535,8 +584,6 @@ def __cartesian2polar__(X, Y, **kwargs):
     Phi = np.arctan(-1 * X / Y)
     Phi[Y < 0] = Phi[Y < 0] + np.pi
     Phi[(X > 0) & (Y >= 0)] = Phi[(X > 0) & (Y >= 0)] + np.pi * 2
-    # convert central pix to PA along minor axis (i.e., v=0)
-    Phi[(X == 0.) & (Y == 1E-99)] = kwargs['par']['PA'] + np.pi / 2.
 
     return R, Phi
 
