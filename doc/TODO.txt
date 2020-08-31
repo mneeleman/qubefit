@@ -1,0 +1,6 @@
+# Things that need fixin'
+
+# coding fixes
+- Update the way that priors are dealt with. Currently only uninformed priors will work.
+- Update the thick disk model to actually work better
+- Fix the way that the probability is defined. Currently only works for chi-squared and with a sigma grid (does not work for regular/sampled grid) as the probability is divided twice by the kernel area).

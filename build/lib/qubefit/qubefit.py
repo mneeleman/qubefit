@@ -210,7 +210,7 @@ class QubeFit(Qube):
 
         return sampler
 
-    def get_chainresults(self, chain, burnin=0.0):
+    def get_chainresults(self, chain, burnin=0.0, fixpa=True):
 
         """ calling this function will generate a dictionary with the median
         values, and 1, 2, 3  sigma ranges of the parameters. These have been
@@ -234,7 +234,7 @@ class QubeFit(Qube):
         # create the output dictionary from the initial input dictionary
         par, MedArr, BestArr = {}, {}, {}
         for key in self.initpar.keys():
-
+            
             # get unit of the cube values
             if self.initpar[key]['Conversion'] is not None:
                 Unit = (self.initpar[key]['Unit'] /

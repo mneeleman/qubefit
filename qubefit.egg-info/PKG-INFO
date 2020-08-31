@@ -1,0 +1,12 @@
+Metadata-Version: 1.1
+Name: qubefit
+Version: 0.1.dev0
+Summary: Qubefit Software
+Home-page: https://github.com/mneeleman/qubefit
+Author: Marcel Neeleman
+Author-email: UNKNOWN
+License: BSD
+Description: UNKNOWN
+Platform: UNKNOWN
+Requires: Python (>3.7.0)
+Provides: qubefit
