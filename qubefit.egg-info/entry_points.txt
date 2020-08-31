@@ -1,3 +1,0 @@
-[console_scripts]
-qfgui = qubefit.scripts.qfgui:main
-
