@@ -410,7 +410,7 @@ class Qube(object):
         DV = self.__get_velocitywidth__()
 
         if variance is None:
-            variance = np.square(self.calculate_sigma)
+            variance = np.square(self.calculate_sigma())
 
         SNR = np.zeros((1, self.shape[1], self.shape[2]))
         fMom0 = np.zeros((1, self.shape[1], self.shape[2]))
@@ -418,6 +418,8 @@ class Qube(object):
         ChanRE = [0]
 
         for CW in cwidths:
+            print('qube.generative_moment: finding max S/N for ' +
+                  'channel width of {} pixel'.format(CW))
             for LE in np.arange(0, self.shape[0] - CW):
                 ChanLE.append(LE)
                 ChanRE.append(LE + CW)
