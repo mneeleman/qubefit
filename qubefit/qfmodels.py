@@ -1,5 +1,10 @@
-# Models for Qubefit
+"""
+Models that can be used for Qubefit.
 
+Any additional models should be put here and can then be referenced by the
+code. If you have a model that could be useful to others, please feel free
+to contact me, and I can add the model permanently to the list.
+"""
 import numpy as np
 from astropy.coordinates.matrix_utilities import rotation_matrix as rm
 from astropy.coordinates import CartesianRepresentation
@@ -9,53 +14,103 @@ import astropy.units as u
 from astropy.convolution import convolve
 import copy
 
-###################################
-# The models available to qubefit #
-
 
 def ThinDisk(**kwargs):
-
-    """ This will create a 'thin disk' model from the stored parameters
-    specified in kwargs. Variables that should be defined are: 'Xcen', 'Ycen',
-    'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Vcen', 'Disp' (optionally one
-    can also define an index for the functions if a range of functions is
-    needed, e.g., Sersic profiles for intensity.). Currently only the
-    IntensityIndex (IIdx) and VelocityIndex (VIdx) are defined.
     """
+    Create a model of a thin disk.
 
-    # get the polar coordinates in the plane of the sky (non-prime) and
-    # in the plane of the disk (prime).
-    R, Phi, RPrime, PhiPrime = __get_coordinates__(twoD=True, **kwargs)
+    This will create an infintely thin disk model from the stored parameters
+    specified in kwargs. The thin disk model is described in detail in the
+    online documentation and uses and limitations to this model are discussed
+    there and in qubefit's reference paper.
 
-    # get the radial, velocity, and dispersion maps (these are 2D in
-    # the plane of the sky)
-    # note that VMap is based on the "sky angle" (Phi)
-    if 'IIdx' in kwargs['par'].keys():
-        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-                (RPrime, kwargs['par']['Rd'], kwargs['par']['IIdx']) *
-                kwargs['par']['I0'])
+    Parameters
+    ----------
+    **kwargs : Dictionary
+        The kwargs dictionary contains all of the information to run the
+        fitting procedure. It consists out of several nested dictionaries.
+        The first level consists out the keys: {'mstring', 'mcmcmap', 'par',
+        'shape', 'data', 'kernel', 'variance', 'maskarray', 'initpar',
+        'probmethod', 'kernelarea', 'convolve'}. The kwargs dictionary should
+        be generated directly from a fully populated qubefit instance using
+        the function kwargs = self.__define_kwargs__(). This extra step is
+        necessary for the input structure of emcee. To create the model, the
+        important keys are:
+
+        'mstring': Dictionary
+            Contains the model name and profiles used for the model. That is
+            the 'modelname', 'intensityprofile', 'velocityprofile', and
+            'dispersionprofile'. The first is a string with the model name,
+            the latter three are list of strings with the name of the profiles
+            in each of the three dimensions, e.g., ['Exponential', None,
+            'Exponential'].
+
+        'par': Dictionary
+            Contains the parameters needed to successfully create the model.
+            These are given in the online documentation, but in short they are
+            'Xcen', 'Ycen', 'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Vcen',
+            and 'Disp'. Each should be given in intrinsic units. In addition,
+            some profiles (e.g., Sersic and Power) require an additional
+            parameter, which is given by the optional parameters:
+            'IIdx', 'VIdx', and 'DIdx'.
+
+        'shape': tuple
+            The shape of the array to be created.
+
+        'kernel': np.ndarray
+            Array representation of the PSF. Will be used by astropy.convolve
+            to convolve with the model.
+
+        'convolve': Boolean
+            If set to true the model cube will be convolved with the kernel.
+
+    Returns
+    -------
+    Model : np.ndarray
+        Array of size kwargs['shape'] with the model that was generated from
+        the parameters in kwargs['par'].
+
+    """
+    # get coordinates in the plane of the sky (prime) and disk (non-prime).
+    RPrime, PhiPrime, R, Phi = __get_coordinates__(twoD=True, **kwargs)
+
+    # get radial, velocity, and dispersion maps (2D in plane of the sky)
+    if True:
+        if 'IIdx' in kwargs['par'].keys():
+            IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                    (R, kwargs['par']['Rd'], kwargs['par']['IIdx']) *
+                    kwargs['par']['I0'])
+        else:
+            IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                    (R, kwargs['par']['Rd']) * kwargs['par']['I0'])
+            if 'VIdx' in kwargs['par'].keys():
+                VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
+                             '_')(R, kwargs['par']['Rv'], kwargs['par']
+                                  ['VIdx']) * kwargs['par']['Vmax'])
+            else:
+                VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
+                             '_')(R, kwargs['par']['Rv']) *
+                        kwargs['par']['Vmax'])
+        # note that VMap is based on the "sky angle" (Phi)
+        VMap = __get_centralvelocity__(PhiPrime, VDep, **kwargs)
+        DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
+                (R, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+
+        # convert these maps into 3d arrays
+        ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
+        VCube = np.tile(VMap, (kwargs['shape'][-3], 1, 1))
+        DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
+
+        # create velocity array (in pixel units)
+        ZCube = np.indices(kwargs['shape'])[0]
     else:
-        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-                (RPrime, kwargs['par']['Rd']) * kwargs['par']['I0'])
-    if 'VIdx' in kwargs['par'].keys():
-        VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
-                (RPrime, kwargs['par']['Rv'], kwargs['par']['VIdx']) *
-                kwargs['par']['Vmax'])
-    else:
-        VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
-                (RPrime, kwargs['par']['Rv']) * kwargs['par']['Vmax'])
-    VMap = __get_centralvelocity__(Phi, VDep, **kwargs)
-    DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
-            (RPrime, kwargs['par']['Rv']) * kwargs['par']['Disp'])
-
-    # convert these maps into 3d matrices
-    # also generate a velocity array (Z-array) which contains the
-    # z pixel number (i.e., velocity) per slice
-    ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
-    VCube = np.tile(VMap, (kwargs['shape'][-3], 1, 1))
-    DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
-    ZCube = np.tile(np.arange(kwargs['shape'][-3])[:, np.newaxis, np.newaxis],
-                    (1, kwargs['shape'][-2], kwargs['shape'][-1]))
+        profile = kwargs['mstring']['intensityprofile']
+        IArray = __getarray__(profile=profile, CP=[RPrime, None, None],
+                              C1P=None, C2P=None, C3P=None,
+                              scale=[None, None, None],
+                              sidx=[None, None, None],
+                              separable=True, **kwargs)
+        print(IArray)
 
     # create the model
     Model = (ICube * np.exp(-1 * (ZCube - VCube)**2 / (2 * DCube**2)))
@@ -68,39 +123,82 @@ def ThinDisk(**kwargs):
 
 
 def DispersionBulge(**kwargs):
-
-    """ This will create a simple model where the emission is not rotating,
-    and the velocity across the emission profile is set to  the systemic
-    velocity of the emission. Variables that should be defined in kwargs
-    are the x-y positions of the center ('Xcen', 'Ycen') as well as the
-    central velocity ('Vcen'). The intensity profile is assumed to be
-    radial and defined by ('I0' and 'Rd'). Optionally one can also define a
-    spectral index (IIdx; e.g., for a Sersic function). Finally the dispersion
-    profile is determined by two parameters ('Disp' and 'Rv').
     """
+    Create a model of a dispersion-dominated bulge.
 
+    This will create a dispersion-dominated bulge model from the stored
+    parameters specified in kwargs. The bulge model is described in detail
+    in the online documentation and uses and limitations to this model are
+    discussed there and in qubefit's reference paper.
+
+    Parameters
+    ----------
+    **kwargs : Dictionary
+        The kwargs dictionary contains all of the information to run the
+        fitting procedure. It consists out of several nested dictionaries.
+        The first level consists out the keys: {'mstring', 'mcmcmap', 'par',
+        'shape', 'data', 'kernel', 'variance', 'maskarray', 'initpar',
+        'probmethod', 'kernelarea', 'convolve'}. The kwargs dictionary should
+        be generated directly from a fully populated qubefit instance using
+        the function kwargs = self.__define_kwargs__(). This extra step is
+        necessary for the input structure of emcee. To create the model, the
+        important keys are:
+
+        'mstring': Dictionary
+            Contains the model name and profiles used for the model. That is
+            the 'modelname', 'intensityprofile', 'velocityprofile', and
+            'dispersionprofile'. The first is a string with the model name,
+            the latter three are list of strings with the name of the profiles
+            in each of the three dimensions, e.g., ['Exponential', None,
+            'Exponential'].
+
+        'par': Dictionary
+            Contains the parameters needed to successfully create the model.
+            These are given in the online documentation, but in short they are
+            'Xcen', 'Ycen', 'Rd', 'I0', 'Rv', 'Vcen' and 'Disp'. Each should
+            be given in intrinsic units. In addition, some profiles
+            (e.g., Sersic and Power) require an additional
+            parameter, which is given by the optional parameters:
+            'IIdx' and 'DIdx'.
+
+        'shape': tuple
+            The shape of the array to be created.
+
+        'kernel': np.ndarray
+            Array representation of the PSF. Will be used by astropy.convolve
+            to convolve with the model.
+
+        'convolve': Boolean
+            If set to true the model cube will be convolved with the kernel.
+
+    Returns
+    -------
+    Model : np.ndarray
+        Array of size kwargs['shape'] with the model that was generated from
+        the parameters in kwargs['par'].
+
+    """
     # get the polar coordinates in the plane of the sky
-    R, Phi = __get_coordinates__(twoD=True, rotate=False, **kwargs)
+    RPrime, PhiPrime = __get_coordinates__(twoD=True, rotate=False, **kwargs)
 
     # the intensity and dispersion profile
     if 'IIdx' in kwargs['par'].keys():
         IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-                (R, kwargs['par']['Rd'], kwargs['par']['IIdx']) *
+                (RPrime, kwargs['par']['Rd'], kwargs['par']['IIdx']) *
                 kwargs['par']['I0'])
     else:
         IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-                (R, kwargs['par']['Rd']) * kwargs['par']['I0'])
+                (RPrime, kwargs['par']['Rd']) * kwargs['par']['I0'])
         DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
-                (R, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+                (RPrime, kwargs['par']['Rv']) * kwargs['par']['Disp'])
 
     # convert these maps into 3d matrices
-    # also generate a velocity array (Z-array) which contains the
-    # z pixel number (i.e., velocity) per slice
     ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
     DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
     VCube = np.full(kwargs['shape'], kwargs['par']['Vcen'])
-    ZCube = np.tile(np.arange(kwargs['shape'][-3])[:, np.newaxis, np.newaxis],
-                    (1, kwargs['shape'][-2], kwargs['shape'][-1]))
+
+    # create velocity array (in pixel units)
+    ZCube = np.indices(kwargs['shape'])[0]
 
     # create the model
     Model = (ICube * np.exp(-1 * (ZCube - VCube)**2 / (2 * DCube**2)))
@@ -112,34 +210,187 @@ def DispersionBulge(**kwargs):
     return Model
 
 
-def ThinSpiral(**kwargs):
-
-    """ This will create a 'thin disk' model with a spiral pattern overlaid
-    on the radial profile from the stored parameters
-    specified in kwargs. Variables that should be defined are: 'Xcen', 'Ycen',
-    'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Vcen', 'Disp' (optionally one can
-    also define an index for the functions if a range of functions is
-    needed, e.g., Sersic profiles for intensity.). Currently only the
-    IntensityIndex (IIdx) is defined. For the spiral pattern the follwing
-    parameters should be given: tnumber of spirals (Nspiral), starting
-    position of first spiral (Phi0), the tightness of spiral (Spcoef),
-    the thickness of the spiral (Dphi), the fractional intensity (Ispf),
-    and the cut-off radius (Rs).
+def TwoClumps(**kwargs):
     """
+    Create a model of two bulges.
 
-    # get the polar coordinates in the plane of the sky (non-prime) and
-    # in the plane of the disk (prime).
-    R, Phi, RPrime, PhiPrime = __get_coordinates__(twoD=True, **kwargs)
+    This model combines two instances of bulges into a single model. This very
+    basic model is useful to see if the velocity gradient seen in low
+    spatial resolution data can be reproduced using a pair of merging clumps
+    that are not rotating themselves.
+
+    Parameters
+    ----------
+    **kwargs : Dictionary
+        The kwargs dictionary contains all of the information to run the
+        fitting procedure. It consists out of several nested dictionaries.
+        The first level consists out the keys: {'mstring', 'mcmcmap', 'par',
+        'shape', 'data', 'kernel', 'variance', 'maskarray', 'initpar',
+        'probmethod', 'kernelarea', 'convolve'}. The kwargs dictionary should
+        be generated directly from a fully populated qubefit instance using
+        the function kwargs = self.__define_kwargs__(). This extra step is
+        necessary for the input structure of emcee. To create the model, the
+        important keys are:
+
+        'mstring': Dictionary
+            Contains the model name and profiles used for the model. That is
+            the 'modelname', 'intensityprofile', 'velocityprofile', and
+            'dispersionprofile'. The first is a string with the model name,
+            the latter three are list of strings with the name of the profiles
+            in each of the three dimensions for **both** clumps, e.g.,
+            [['Exponential', None, 'None'], ['Exponential', None, 'None']]
+
+        'par': Dictionary
+            Contains the parameters needed to successfully create the model.
+            These are given in the online documentation, but in short they are
+            'Xcen1', 'Ycen1', 'Rd1', 'I01', 'Rv1', 'Vcen1' and 'Disp1' for the
+            first clump and similarly for the second clump, 'Xcen2', 'Ycen2',
+            'Rd2', 'I02', 'Rv2', 'Vcen2' and 'Disp2'. Each should be given in
+            intrinsic units. In addition, some profiles
+            (e.g., Sersic and Power) require an additional parameter,
+            which is given by the optional parameters, 'IIdx1', 'DIdx1',
+            'IIdx2' and 'DIdx2'.
+
+        'shape': tuple
+            The shape of the array to be created.
+
+        'kernel': np.ndarray
+            Array representation of the PSF. Will be used by astropy.convolve
+            to convolve with the model.
+
+        'convolve': Boolean
+            If set to true the model cube will be convolved with the kernel.
+
+    Returns
+    -------
+    Model : np.ndarray
+        Array of size kwargs['shape'] with the model that was generated from
+        the parameters in kwargs['par'].
+
+    """
+    # split up the kwargs into two different keywords for the two clumps
+    kwargs1 = copy.deepcopy(kwargs)
+    kwargs1['mstring']['intensityprofile'] = \
+        kwargs['mstring']['intensityprofile'][0]
+    kwargs1['mstring']['dispersionprofile'] = \
+        kwargs['mstring']['dispersionprofile'][0]
+    kwargs1['par']['Xcen'] = kwargs['par']['Xcen1']
+    kwargs1['par']['Ycen'] = kwargs['par']['Ycen1']
+    kwargs1['par']['I0'] = kwargs['par']['I01']
+    kwargs1['par']['Rd'] = kwargs['par']['Rd1']
+    kwargs1['par']['Vcen'] = kwargs['par']['Vcen1']
+    kwargs1['par']['Disp'] = kwargs['par']['Disp1']
+    kwargs1['par']['Rv'] = kwargs['par']['Rv1']
+    if 'IIdx1' in kwargs['par'].keys():
+        kwargs1['par']['IIdx'] = kwargs['par']['IIdx1']
+    if 'DIdx1' in kwargs['par'].keys():
+        kwargs1['par']['DIdx'] = kwargs['par']['DIdx1']
+    kwargs1['convolve'] = False
+
+    kwargs2 = copy.deepcopy(kwargs)
+    kwargs2['mstring']['intensityprofile'] = \
+        kwargs['mstring']['intensityprofile'][1]
+    kwargs2['mstring']['dispersionprofile'] = \
+        kwargs['mstring']['dispersionprofile'][1]
+    kwargs2['par']['Xcen'] = kwargs['par']['Xcen2']
+    kwargs2['par']['Ycen'] = kwargs['par']['Ycen2']
+    kwargs2['par']['I0'] = kwargs['par']['I02']
+    kwargs2['par']['Rd'] = kwargs['par']['Rd2']
+    kwargs2['par']['Vcen'] = kwargs['par']['Vcen2']
+    kwargs2['par']['Disp'] = kwargs['par']['Disp2']
+    kwargs2['par']['Rv'] = kwargs['par']['Rv2']
+    if 'IIdx2' in kwargs['par'].keys():
+        kwargs2['par']['IIdx'] = kwargs['par']['IIdx2']
+    if 'DIdx2' in kwargs['par'].keys():
+        kwargs2['par']['DIdx'] = kwargs['par']['DIdx2']
+    kwargs2['convolve'] = False
+
+    # create the models individually  (not convolved with kernel)
+    Model1 = DispersionBulge(**kwargs1)
+    Model2 = DispersionBulge(**kwargs2)
+
+    # combine the two models
+    Model = Model1 + Model2
+
+    # convolve
+    if kwargs['convolve']:
+        Model = convolve(Model, kwargs['kernel'])
+
+    return Model
+
+
+def ThinSpiral(**kwargs):
+    """
+    Create a model of a thin spiral disk.
+
+    This will create an infintely thin disk model with a spiral pattern
+    from the stored parameters specified in kwargs. The thin spiral model
+    is described in detail in the online documentation and uses and
+    limitations to this model are discussed there. It has been used in
+    Chittidi et al. 2020 arXiv200513158
+
+    Parameters
+    ----------
+    **kwargs : Dictionary
+        The kwargs dictionary contains all of the information to run the
+        fitting procedure. It consists out of several nested dictionaries.
+        The first level consists out the keys: {'mstring', 'mcmcmap', 'par',
+        'shape', 'data', 'kernel', 'variance', 'maskarray', 'initpar',
+        'probmethod', 'kernelarea', 'convolve'}. The kwargs dictionary should
+        be generated directly from a fully populated qubefit instance using
+        the function kwargs = self.__define_kwargs__(). This extra step is
+        necessary for the input structure of emcee. To create the model, the
+        important keys are:
+
+        'mstring': Dictionary
+            Contains the model name and profiles used for the model. That is
+            the 'modelname', 'intensityprofile', 'velocityprofile', and
+            'dispersionprofile'. The first is a string with the model name,
+            the latter three are list of strings with the name of the profiles
+            in each of the three dimensions, e.g., ['Exponential', None,
+            'Exponential'].
+
+        'par': Dictionary
+            Contains the parameters needed to successfully create the model.
+            These are given in the online documentation, but in short they are
+            'Xcen', 'Ycen', 'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Vcen',
+            and 'Disp'. Each should be given in intrinsic units. In addition,
+            some profiles (e.g., Sersic and Power) require an additional
+            parameter, which is given by the optional parameters:
+            'IIdx', 'VIdx', and 'DIdx'.
+            The spiral pattern is described by an additonal six parameters,
+            'NSpiral', 'Phi0', 'Spcoef', 'Dphi', 'Ispf', and 'Rs'
+
+        'shape': tuple
+            The shape of the array to be created.
+
+        'kernel': np.ndarray
+            Array representation of the PSF. Will be used by astropy.convolve
+            to convolve with the model.
+
+        'convolve': Boolean
+            If set to true the model cube will be convolved with the kernel.
+
+    Returns
+    -------
+    Model : np.ndarray
+        Array of size kwargs['shape'] with the model that was generated from
+        the parameters in kwargs['par'].
+
+    """
+    # get the polar coordinates in the plane of the sky (prime) and
+    # in the plane of the disk (non-prime).
+    RPrime, PhiPrime, R, Phi = __get_coordinates__(twoD=True, **kwargs)
 
     # get the radial, velocity, and dispersion maps (these are 2D in
     # the plane of the sky)
     # note that VMap is based on the "sky angle" (Phi)
     if 'IIdx' in kwargs['par'].keys():
         IM1 = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-               (RPrime, kwargs['par']['Rd'], kwargs['par']['IIdx']))
+               (R, kwargs['par']['Rd'], kwargs['par']['IIdx']))
     else:
         IM1 = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-               (RPrime, kwargs['par']['Rd']))
+               (R, kwargs['par']['Rd']))
 
     #  spiral arm density profile
     IM2 = 0
@@ -147,33 +398,32 @@ def ThinSpiral(**kwargs):
         # find the starting phi at R=0
         CPhi0 = (kwargs['par']['Phi0'] +
                  (2 * np.pi) / kwargs['par']['Nspiral'] * idx)
-        CPhi = CPhi0 + kwargs['par']['Spcoef'] * RPrime
+        CPhi = CPhi0 + kwargs['par']['Spcoef'] * R
         CPhi = np.mod(CPhi, 2 * np.pi)
         # CPhi[np.where(CPhi > np.pi)] -= 2 * np.pi
-        IM2 += np.exp(-0.5 * (PhiPrime - CPhi)**2 / kwargs['par']['Dphi']**2)
+        IM2 += np.exp(-0.5 * (Phi - CPhi)**2 / kwargs['par']['Dphi']**2)
 
     IM2 *= kwargs['par']['Ispf']
-    IM2 *= eval('_Step_')(RPrime, kwargs['par']['Rs'])
+    IM2 *= eval('_Step_')(R, kwargs['par']['Rs'])
 
-    # add the disk and the spiral arm structure and mux by the z-profile
+    # add the disk and the spiral arm structure
     IMap = IM1 + IM2
     IMap *= kwargs['par']['I0']
 
     # velocity and dispersion maps
     VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
-            (RPrime, kwargs['par']['Rv']) * kwargs['par']['Vmax'])
+            (R, kwargs['par']['Rv']) * kwargs['par']['Vmax'])
     VMap = __get_centralvelocity__(Phi, VDep, **kwargs)
     DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
-            (RPrime, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+            (R, kwargs['par']['Rv']) * kwargs['par']['Disp'])
 
     # convert these maps into 3d matrices
-    # also generate a velocity array (Z-array) which contains the
-    # z pixel number (i.e., velocity) per slice
     ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
     VCube = np.tile(VMap, (kwargs['shape'][-3], 1, 1))
     DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
-    ZCube = np.tile(np.arange(kwargs['shape'][-3])[:, np.newaxis, np.newaxis],
-                    (1, kwargs['shape'][-2], kwargs['shape'][-1]))
+
+    # create velocity array (in pixel units)
+    ZCube = np.indices(kwargs['shape'])[0]
 
     # create the model
     Model = (ICube * np.exp(-1 * (ZCube - VCube)**2 / (2 * DCube**2)))
@@ -466,17 +716,17 @@ def SpiralGalaxy(Convolve=True, **kwargs):
 # Available profiles for Intensity, Velocity, and Dispersion #
 
 
-def _Exponential_(X, X0):
+def _Exponential_(X, X0, *args):
 
     return np.exp(-1 * X / X0)
 
 
-def _Constant_(X, X0):
+def _Constant_(X, X0, *args):
 
     return np.ones_like(X)
 
 
-def _Step_(X, X0):
+def _Step_(X, X0, *args):
 
     Arr = np.ones_like(X)
     Arr[np.where(X > X0)] = 0.
@@ -484,17 +734,17 @@ def _Step_(X, X0):
     return Arr
 
 
-def _Power_(X, X0, N):
+def _Power_(X, X0, N, *args):
 
     return np.power((X / X0), N)
 
 
-def _Atan_(X, X0):
+def _Atan_(X, X0, *args):
 
     return (2. / np.pi) * np.arctan(X / X0)
 
 
-def _Delta_(X, X0):  # not recommended to use this profile
+def _Delta_(X, X0, *args):  # not recommended to use this profile
 
     Arr = np.zeros_like(X)
     Arr[np.where(X == X0)] = 1
@@ -502,22 +752,22 @@ def _Delta_(X, X0):  # not recommended to use this profile
     return Arr
 
 
-def _Sersic_(X, X0, N):
+def _Sersic_(X, X0, N, *args):
 
     return np.exp(-(2.*N-(1./3.))*(((X/X0)**N)-1))
 
 
-def _Sech2_(X, X0):
+def _Sech2_(X, X0, *args):
 
     return (1. / np.cos(-1. * X / X0))**2
 
 
-def _ExpConst_(X, X0):
+def _ExpConst_(X, X0, *args):
 
     return (1 + 1.5 * np.exp(-3 * X / X0))
 
 
-def _Custom_(X, X0):
+def _Custom_(X, X0, *args):
 
     return (np.power((X / X0), -0.5) * 0.3888 + 1.)
 ##############################################################
@@ -605,7 +855,8 @@ def __get_centralvelocity__(Phi, VDep, **kwargs):
     return V
 
 
-def __getarray__(rotate=True, representation='Cylindrical', **kwargs):
+def __getcoordinatearrays__(rotate=True, representation='Cylindrical',
+                            **kwargs):
 
     """ This function will create a 2D/3D array from the requested shape in
     kwargs['shape']. It can either return this array into cartesian,
@@ -662,8 +913,10 @@ def __getarray__(rotate=True, representation='Cylindrical', **kwargs):
 
 
 def __sudophi_array__(**kwargs):
+    """
+    Create array of sudophi, angle in sky frame w.r.t. to center of rotation.
 
-    """ This will calculate the angle in the sky frame from the center of the
+    This will calculate the angle in the sky frame from the center of the
     emission. Note that this is not the same as the angle in the rotated frame,
     as this is defined in the rotated frame not the sky frame. It is also not
     the phi in the sky frame, as this is defined from the origin and for this
@@ -695,3 +948,28 @@ def __sudophi_array__(**kwargs):
     phi[phi < 0] = phi[phi < 0] + 2*np.pi
 
     return phi
+
+
+def __getarray__(profile=None, CPrime=[None, None, None],
+                 scale=[None, None, None], sidx=[None, None, None],
+                 separable=True, **kwargs):
+
+    if separable:
+        first = True
+        for idx, CP in enumerate(CPrime):
+            if CP is not None:
+                if scale[idx] is None:
+                    raise ValueError('__getintensityarray__: Set the scale ' +
+                                     'for coordinate index-{}'.format(idx))
+                tArray = (eval('_' + profile[idx] + '_')
+                          (CP, scale[idx], sidx[idx]))
+                if first:
+                    Array = tArray
+                    first = False
+                else:
+                    Array *= tArray
+    else:
+        raise NotImplementedError('__getintensityarray__: Non separable ' +
+                                  'profiles have not been implemented')
+
+    return Array

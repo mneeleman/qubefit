@@ -1,4 +1,4 @@
-# modules
+"""The main class for the qubefit program."""
 import numpy as np
 from scipy.special import erf
 import emcee
@@ -9,11 +9,12 @@ from qubefit.qube import Qube
 from qubefit.qfmodels import *
 from multiprocessing import Pool
 import os
+import h5py
 
 
 class QubeFit(Qube):
 
-    def __init__(self, modelname='ThinDisk',
+    def __init__(self, modelname='ThinDisk', probmethod='ChiSq',
                  intensityprofile=['Exponential', None, 'Exponential'],
                  velocityprofile=['Constant', None, None],
                  dispersionprofile=['Constant', None, None]):
@@ -31,6 +32,7 @@ class QubeFit(Qube):
         self.intensityprofile = intensityprofile
         self.velocityprofile = velocityprofile
         self.dispersionprofile = dispersionprofile
+        self.probmethod = probmethod
 
     def create_gaussiankernel(self, channels=None, LSFSigma=None,
                               kernelsize=4):
@@ -133,43 +135,80 @@ class QubeFit(Qube):
         self.mcmcdim = len(self.mcmcpar)
 
     def create_model(self, convolve=True):
+        """
+        Create the model cube with the given parameters and model.
 
-        """ This function will take the stored parameters (in self.par) and
+        This function will take the stored parameters (in self.par) and
         will generate the requested model. NOTE: currently no checking is
         done that the parameters are actually defined for the model that is
         requested. This will likely result in a rather benign AttributeError.
 
-        keywords
-        --------
-        convolve: Boolean (True|False)
-                  Determines if the convolution is done or not. Default(True)
-        """
+        Parameters
+        ----------
+        convolve : BOOLEAN, optional
+            If set, the model will be convolved with the beam.
+            The default is True.
 
+        Returns
+        -------
+        None.
+
+        This function will create/modify the self.model array with the latest
+        model based on the parmeters in self.par.
+
+        """
         kwargs = self.__define_kwargs__()
         kwargs['convolve'] = convolve
         self.model = __create_model__(**kwargs)
 
-    def run_mcmc(self, nwalkers=50, nruns=100, nproc=None):
+    def run_mcmc(self, nwalkers=50, nsteps=100, nproc=None, filename=None,
+                 return_sampler=False):
+        """
+        Run the MCMC process with emcee.
 
-        """ This is the heart of QubeFit. It will run an MCMC process on a
+        This is the heart of QubeFit. It will run an MCMC process on a
         predefined model and will return the resulting chain of the posterior
         PDFs of each individual parameter that was varied.
 
-        keywords:
-        ---------
-        nwalkers (int|default: 50)
-            The number of walkers to use in the MCMC chain analysis.
+        Parameters
+        ----------
+        nwalkers : INTEGER, optional
+            The number of walkers to use in the MCMC chain. The default is 50.
+        nsteps : INTEGER, optional
+            The number of steps to make in the MCMC chain. The default is 100.
+        nproc : INTEGER, optional
+            The number of parallel processes to use. If set to None, the code
+            will determine the optimum number of processes to spawn. Set this
+            number to limit to load of this code on your system.
+            The default is None.
+        filename : STRING, optional
+            If set, the chain will be saved into a file with this file name.
+            The file format is HDF5, and if not directly specified, this
+            extension will be appended to the filename. The default is None.
+        return_sampler : BOOLEAN, optional
+            If set, this will return the emcee ensemble sampler.
+            The default is False.
 
-        nruns (int|default: 100)
-            The number of runs in the MCMC chain analysis.
+        Raises
+        ------
+        ValueError
+            A ValueError will be raised if the initial probability is
+            infinity. This likely is an indication that the initial
+            parameters fall outside the range defined by the priors.
 
-        nproc (int|default: None)
-            If set to an integer, it determines the number of processes to
-            spawn. if None, the code will determine the optimum number of
-            processes to spawn to distribute over the available CPU cores.
-            Set this number to limit the load of the code (i.e., to play
-            nice with others)
+        Yields
+        ------
+        sampler : emcee.EnsembleSampler
+            The ensemble sampler returned by the emcee function call.
+
         """
+        # load the hdf5 backend if filename is specified
+        if filename is not None:
+            if filename[-5:] != '.hdf5':
+                filename + '.hdf5'
+            backend = emcee.backends.HDFBackend(filename)
+        else:
+            backend = None
 
         # intiate the model (redo if already done)
         self.create_model()
@@ -196,46 +235,96 @@ class QubeFit(Qube):
         with Pool(nproc) as pool:
             sampler = emcee.EnsembleSampler(nwalkers, self.mcmcdim,
                                             __lnprob__, pool=pool,
-                                            kwargs=kwargs)
+                                            backend=backend, kwargs=kwargs)
 
             # initiate the walkers
             p0 = [(1 + 0.02 * np.random.rand(self.mcmcdim)) * self.mcmcpar
                   for walker in range(nwalkers)]
 
             # run the mcmc chain
-            sampler.run_mcmc(p0, nruns, progress=True)
+            sampler.run_mcmc(p0, nsteps, progress=True)
 
         # Now store the results into the structure
         self.mcmcarray = sampler.chain
+        self.mcmclnprob = sampler.lnprobability
 
-        return sampler
+        # return the sampler (for testing of emcee)
+        if return_sampler:
+            return sampler
 
-    def get_chainresults(self, chain, burnin=0.0):
+    def get_chainresults(self, filename=None, burnin=0.3, reload_model=True,
+                         load_best=False):
+        """
+        Get the results from the MCMC run either from file or memory.
 
-        """ calling this function will generate a dictionary with the median
+        Calling this function will generate a dictionary with the median
         values, and 1, 2, 3  sigma ranges of the parameters. These have been
         converted into their original units as given in the initial parameters.
-        """
 
-        # if file is given for string convert to numpy array
-        if type(chain) == str:
-            chain = np.load(chain)
+        Parameters
+        ----------
+        filename : STRING, optional
+            The name of the HDF5 file to load. If the filename is set to None,
+            the assumption is that the qubefit instance already has the
+            MCMC chain and log probability loaded into their respective
+            instances. The default is None.
+        burnin : FLOAT, optional
+            The fraction of runs to discard at the start of the MCMC chain.
+            This is necessary as the chain might not have converged in the
+            very beginning. One should check the chain to make sure that this
+            value is correct. The default is 0.3.
+        reload_model : BOOLEAN, optional
+            reload the model cube with the updated parameters. The default
+            parameters to use are the median values of each parameter.
+            The default is True.
+        load_best : BOOLEAN, optional
+            If set, then instead of the median parameters, the combination
+            of parameters that yielded the highest probability will be
+            chosen. The default is False.
+
+        Raises
+        ------
+        AttributeError
+            An attribute error will be raised if the needed mcmcarray and
+            lnprobability keys are not set in the qubefit instance and no
+            filename is given.
+
+        Returns
+        -------
+        None.
+
+        Populates the self.chainpar key with a dictionary with the median
+        parameters, uncertainty and unit conversions.
+
+        """
+        # if filename is given, then load the HDF5 file.
+        if filename is not None:
+            file = h5py.File(filename, 'r')
+            self.mcmcarray = file['mcmc']['chain'][()]
+            self.mcmclnprob = file['mcmc']['log_prob'][()]
+        else:
+            try:
+                self.mcmcarray
+                self.mcmclnprob
+            except AttributeError:
+                raise AttributeError('get_chainresults: mcmcarray or ' +
+                                     'mcmclnprob are not defined')
 
         # get the burnin value below which to ditch the data
-        burninvalue = int(np.ceil(chain.shape[1]*burnin))
+        burninvalue = int(np.ceil(self.mcmcarray.shape[1]*burnin))
 
         # sigma ranges
         perc = (1 / 2 + 1 / 2 * erf(np.arange(-3, 4, 1) / np.sqrt(2))) * 100
 
         # find the index with the highest probability
-        BestValIdx = np.unravel_index(chain[:, :, -1].argmax(),
-                                      chain[:, :, -1].shape)
+        BestValIdx = np.unravel_index(self.mcmclnprob.argmax(),
+                                      self.mcmclnprob.shape)
 
-        # create the output dictionary from the initial input dictionary
+        # create the output parameters from the initial parameter conversions.
         par, MedArr, BestArr = {}, {}, {}
         for key in self.initpar.keys():
 
-            # get unit of the cube values
+            # get the intrinsic units of the parameters
             if self.initpar[key]['Conversion'] is not None:
                 Unit = (self.initpar[key]['Unit'] /
                         self.initpar[key]['Conversion'].unit)
@@ -245,10 +334,11 @@ class QubeFit(Qube):
             # now calculate median, etc. only if it was not held fixed
             if not self.initpar[key]['Fixed']:
                 idx = self.mcmcmap.index(key)
-                Data = chain[:, burninvalue:, idx]
+                Data = self.mcmcarray[:, burninvalue:, idx]
                 Values = np.percentile(Data, perc) * Unit
                 MedArr.update({key: Values[3].value})
-                BestValue = chain[BestValIdx[0], BestValIdx[1], idx] * Unit
+                BestValue = self.mcmcarray[BestValIdx[0], BestValIdx[1],
+                                           idx] * Unit
                 BestArr.update({key: BestValue.value})
                 if self.initpar[key]['Conversion'] is not None:
                     Values = Values * self.initpar[key]['Conversion']
@@ -267,15 +357,34 @@ class QubeFit(Qube):
                               'Best': BestValue.value, 'Unit': Values[0].unit,
                               'Conversion': self.initpar[key]['Conversion']}})
         par.update({'MedianArray': MedArr, 'BestArray': BestArr})
-
         self.chainpar = par
 
+        # reload the model with the median or best array
+        if reload_model:
+            if load_best:
+                self.update_parameters(BestArr)
+            else:
+                self.update_parameters(MedArr)
+            self.create_model()
+
     def update_parameters(self, parameters):
-
-        """ This will update the 'par' keyword using the values given in
-        parameters (here parameters is a dictionary)
         """
+        Update the parameters key with the given parameters.
 
+        Parameters
+        ----------
+        parameters : dictionary
+            dictionary of parameters that will be read into the par keyword.
+            Note that all parameters in self.par need to be defined in this
+            dictionary.
+
+        Returns
+        -------
+        None.
+
+        Updates the self.par keyword with the new parameter values.
+
+        """
         for key in parameters.keys():
             self.par[key] = parameters[key]
 
@@ -324,10 +433,12 @@ class QubeFit(Qube):
         return chisq
 
     def create_maskarray(self, sampling=2., bootstrapsamples=200,
-                         method='ChiSq', mask=None, regular=None,
-                         sigma=None, nblobs=1, fmaskgrow=0.01):
+                         mask=None, regular=None, sigma=None, nblobs=1,
+                         fmaskgrow=0.01):
+        """
+        Generate the mask for fitting.
 
-        """ This will generate the mask array. It should only be done
+        This will generate the mask array. It should only be done
         once so that the mask does not change between runs of the MCMC
         chain, which could/will result in slightly different probabilities
         for the same parameters. The mask returned is either the same size
@@ -340,19 +451,13 @@ class QubeFit(Qube):
 
         Several mask options can be specified.
 
-        keywords:
-        ---------
+        Parameters
+        ----------
         sampling (float|default: 2.):
             The number of samples to choose per beam/kernel area
 
         bootstrapsamples (int|default: 200):
             The number of bootstrap samples to generate.
-
-        method (string|default: 'ChiSq'):
-            Specifies which method to use
-            to calculate the probability for this masked array. It will also
-            determine which array needs to be returned. Currently allowed
-            values are: 'BootKS', 'BootChiSq', 'KS', ChiSq', 'RedChiSq'
 
         mask (np.array|default: None):
             If specified it will take this mask as the mask array,
@@ -379,15 +484,12 @@ class QubeFit(Qube):
             fraction of the peak value which marks the limit of where to cut
             of the growth factor. If set to 1, the mask is not grown.
 
-        returns:
+        Returns
         -------
         sets the following keys:
             self.maskarray
-            self.probmethod
         """
-
-        # populate the PropMethod key
-        self.probmethod = method
+        method = self.probmethod
 
         # bootstrap array
         if method == 'BootKS' or method == 'BootChiSq':
@@ -454,12 +556,11 @@ class QubeFit(Qube):
         MString = {}
         for mkey in mkeys:
             MString[mkey] = getattr(self, mkey, None)
+        kwargs = {'mstring': MString}
 
         akeys = ['mcmcmap', 'par', 'shape', 'data', 'kernel',
                  'variance', 'maskarray', 'initpar', 'probmethod',
                  'kernelarea']
-
-        kwargs = {'mstring': MString}
         for akey in akeys:
             kwargs[akey] = getattr(self, akey, None)
         kwargs['convolve'] = True
@@ -533,7 +634,7 @@ def __get_lnprob__(residual, **kwargs):
     approaches can be defined using the kwargs['ProbMethod']. This keyword is
     set when the mask array is specified (see self.create_maskarray).
 
-    'Chi-Squared' likelihood function is calulated using the approach:
+    'Chi-Squared' likelihood function is calculated using the approach:
     ChiSquared = np.sum(np.square(data - model) / variance +
                         np.log(2 * pi * variance))
     Here the second part is really not necessary as it is a constant term and
