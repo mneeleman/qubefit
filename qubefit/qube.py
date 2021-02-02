@@ -106,8 +106,9 @@ class Qube(object):
                         plot=False, plotfile='./sigma_estimate.pdf', **kwargs):
 
         """ This function will fit a Gaussian to the data and return the
-        sigma value. For multiple channels it will do the calculation for each
-        channel and return an array of sigma values.
+        sigma value. If the data has multiple channels it will do the 
+        calculation for each channel and return an array of sigma values with
+        length equal to the number of channels in the data.
 
         keywords:
         ---------
@@ -144,7 +145,7 @@ class Qube(object):
             will overwrite the values given here)
 
         bins (int| None):
-            The numbe of bins to use in the histogram. If not set, doguess
+            The number of bins to use in the histogram. If not set, doguess
             needs to be set, which calculates this value.
 
         Returns:
@@ -740,7 +741,7 @@ class Qube(object):
                 self.header[axis] = self.data.shape[self.data.ndim-cnt-1]
         self.header['NAXIS'] = self.data.ndim
 
-        # remove the 4th dimension if not needed
+        # remove the fourth dimension if not needed
         if self.data.ndim <= 3:
             keys = ['PC04_01', 'PC04_02', 'PC04_03', 'PC04_04',
                     'PC01_04', 'PC02_04', 'PC03_04', 'CTYPE4',
