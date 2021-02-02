@@ -65,10 +65,14 @@ def get_beam(Qube, scale=None, wcs=None):
 
 def qubebeam(Qube, ax, loc=3, pad=0.5, borderpad=0.4, frameon=True,
              color='Darkslategray', alpha=1.0, wcs=None, prop=None,
-             scale=None, **kwargs):
+             scale=None, flip=False, **kwargs):
 
     # Grab the Beam
     width, height, angle = get_beam(Qube, scale=scale, wcs=wcs)
+
+    # flip the beam if requested
+    if flip:
+        angle = -1 * angle
 
     # Note: not set up to deal with different x,y, pixel scales
     beam = AnchoredEllipse(ax.transData, width=width, height=height,
@@ -79,12 +83,17 @@ def qubebeam(Qube, ax, loc=3, pad=0.5, borderpad=0.4, frameon=True,
     return beam
 
 
-def get_pltposrange(origin, shape, scale, getposition=False):
+def get_pltposrange(origin, shape, scale, getposition=False, flip=False):
 
     position = np.array([-origin[0], shape[0]-origin[0]-1,
                          -origin[1], shape[1]-origin[1]-1])
     pltrange = np.array([position[0]-0.5, position[1]+0.5,
                          position[2]-0.5, position[3]+0.5]) * scale
+
+    # flip the position and position in the x-direction
+    if flip:
+        position = np.array([position[1], position[0], position[2], position[3]])
+        pltrange = np.array([pltrange[1], pltrange[0], pltrange[2], pltrange[3]])
     if getposition:
         return position
     else:
@@ -95,9 +104,9 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
                 origin=None, scale=1.0, cmap='RdYlBu_r', vrange=None,
                 cbar=False, cbaraxis=None, cbarlabel=None, vscale=None,
                 tickint=5.0, clevels=None, ccolor='black', beam=True,
-                text=None, textprop=[dict(size=12)], textposition=[1],
+                text=None, textprop=[dict(size=12)], textposition=[[0.5, 0.85]],
                 cross=None, crosssize=1., crosscolor='black', crosslw=2.,
-                pdfname=None, pltrange=None, **kwargs):
+                pdfname=None, pltrange=None, flip=False, **kwargs):
 
     """ This will make a standard figure of a 2D data set, it can be used to
     either draw contours or filled images only or both. It can be used as a
@@ -133,6 +142,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
     crosslw:    linewidth o the cross
     pdfname:    if set, the name of the PDF file (only works with newplot=True)
     pltrange:
+    flip:       boolean, if set to true it will flip the x-axis.
     """
 
     # check if new plot needs to be generated
@@ -162,14 +172,15 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
             origin = [(raster.data.shape[0]-1) // 2,
                       (raster.data.shape[0]-1) // 2]
         if pltrange is None:
-            pltrange = get_pltposrange(origin, raster.data.shape, scale)
+            pltrange = get_pltposrange(origin, raster.data.shape, scale,
+                                       flip=flip)
 
         # define the z-axis range
         if vrange is None:
             vrange = [np.nanmin(raster.data), np.nanmax(raster.data)]
 
         # plot the raster image
-        im = ax.imshow(raster.data, cmap=cmap, origin='bottom',
+        im = ax.imshow(raster.data, cmap=cmap, origin='lower',
                        extent=pltrange, vmin=vrange[0], vmax=vrange[1])
 
         # plot the color bar
@@ -194,7 +205,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
             origin = [(contour.data.shape[0]-1) // 2,
                       (contour.data.shape[0]-1) // 2]
         position = get_pltposrange(origin, contour.data.shape, scale,
-                                   getposition=True)
+                                   getposition=True, flip=flip)
         xc = np.linspace(position[0], position[1],
                          contour.data.shape[0]) * scale
         yc = np.linspace(position[2], position[3],
@@ -215,7 +226,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
         else:
             raise ValueError('To draw a beam something has to be drawn')
 
-        ax.add_artist(qubebeam(data, ax, scale=scale, loc=3, pad=0.3,
+        ax.add_artist(qubebeam(data, ax, scale=scale, loc=3, pad=0.3, flip=flip,
                                fill=None, hatch='////', edgecolor='black'))
 
     # optional text
@@ -228,9 +239,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
             textprop = [textprop]
 
         for txt, prop, pos in zip(text, textprop, textposition):
-            at = AnchoredText(txt, pos, prop=prop, frameon=True)
-            at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
-            ax.add_artist(at)
+            ax.text(pos[0], pos[1], txt, prop, transform=ax.transAxes)
 
     # add cross
     if cross is not None:
@@ -263,7 +272,7 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
 def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
                       channels=None, ncols=4, vrange=None, vscale=None,
                       show=True, pdfname=None, cbarlabel=None, cmap='RdYlBu_r',
-                      **kwargs):
+                      beam=True, **kwargs):
 
     """ Running this function will create a quick channel map of the Qube.
     One can either plot the contours or the raster image or both. This program
@@ -323,7 +332,7 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
         VelStr = str(int(round(VelArr[chan]))) + ' km s$^{-1}$'
 
         # get the boolean of the beam (bottom left figure only)
-        if (idx % ncols == 0) and (idx // ncols == int(nrows) - 1):
+        if (idx % ncols == 0) and (idx // ncols == int(nrows) - 1) and beam:
             beambool = True
         else:
             beambool = False
@@ -350,7 +359,7 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
         standardfig(raster=rasterimage, contour=contourimage, clevels=clevel,
                     newplot=False, fig=fig, ax=grid[idx], cbar=False,
                     beam=beambool, vrange=vrange, text=[VelStr], cmap=cmap,
-                    textprop=[dict(size=12)], **kwargs)
+                    **kwargs)
 
     # now do the color bar
     norm = mpl.colors.Normalize(vmin=vrange[0], vmax=vrange[1])
