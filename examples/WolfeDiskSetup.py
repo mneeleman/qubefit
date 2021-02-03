@@ -11,7 +11,7 @@ def set_model():
     Qube.file = DataFile
 
     # Trimming the Data Cube
-    center, sz, chan = [507, 513], [45, 45], [15, 40]
+    center, sz, chan = [123, 129], [45, 45], [15, 40]
     xindex = (center[0] - sz[0], center[0] + sz[0] + 1)
     yindex = (center[1] - sz[1], center[1] + sz[1] + 1)
     zindex = (chan[0], chan[1])
@@ -73,20 +73,3 @@ def set_model():
     QubeS.create_model()
 
     return QubeS
-
-
-def run_mcmcchain(nwalkers=20, nruns=50, chainfile='ThinDisk.npy'):
-
-    # the model cube
-    QubeS = set_model()
-
-    # run the mcmc
-    sampler = QubeS.run_mcmc(nwalkers=nwalkers, nruns=nruns, nproc=6)
-
-    # save the chain (until we know what to do with it)
-    Chain = np.zeros((nwalkers, nruns, 10))
-    Chain[:, :, :9] = sampler.chain
-    Chain[:, :, 9] = sampler.lnprobability
-    np.save(chainfile, Chain)
-
-    return sampler
