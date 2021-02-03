@@ -437,12 +437,13 @@ def ThinSpiral(**kwargs):
 
 # THE FOLLOWING PROFILES HAVE NOT BEEN TESTED AND HAVE SOME BUGS IN THEM
 def ThickDisk(**kwargs):
+    """
+    Create a model of a thick disk.
 
-    """ This will create a 'thick disk' model from the stored parameters
+    This will create a 'thick disk' model from the stored parameters
     specified in kwargs. Variables that should be defined are: 'Xcen', 'Ycen',
     'PA', 'Incl', 'Rd', 'Zf', 'I0', 'Rv', 'Vmax', 'Disp'.
     """
-
     # get the cylindrical coordinates in the plane of the disk.
     rhoArray, phiArray, zArray = __getarray__(**kwargs)
 

@@ -293,7 +293,9 @@ class QubeFit(Qube):
         -------
         None.
 
-        Populates the self.chainpar key with a dictionary with the median
+        If not present, it will populate the self.mcmcarray and
+        self.mcmclnprob keys with the values in the file. It will populate
+        the self.chainpar key with a dictionary with the median
         parameters, uncertainty and unit conversions.
 
         """
