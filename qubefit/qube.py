@@ -313,7 +313,8 @@ class Qube(object):
         else:
             return Mask
 
-    def calculate_moment(self, moment=0, channels=None, restfreq=None):
+    def calculate_moment(self, moment=0, channels=None, restfreq=None,
+                         use_model=False):
         """
         What are the units that come out??
 
@@ -338,23 +339,29 @@ class Qube(object):
         if restfreq is not None:
             mom.header['RESTFRQ'] = restfreq
 
+        # select the array to perform the calculation on
+        if use_model:
+            array = mom.model
+        else:
+            array = mom.data
+
         # calculate the moment
         if moment == 0:     # 0th moment
             dv = mom.__get_velocitywidth__()
-            mom.data = np.nansum(mom.data, axis=0) * dv
+            mom.data = np.nansum(array, axis=0) * dv
         elif moment == 1:   # 1st moment
             tVel = mom._getvelocity_()
             VelArr = np.tile(tVel[:, np.newaxis, np.newaxis],
                              (1, mom.shape[1], mom.shape[2]))
-            tmom0 = np.nansum(mom.data, axis=0)
-            mom.data = np.nansum(VelArr * mom.data, axis=0) / tmom0
+            tmom0 = np.nansum(array, axis=0)
+            mom.data = np.nansum(VelArr * array, axis=0) / tmom0
         elif moment == 2:   # 2nd moment
             tVel = mom._getvelocity_()
             VelArr = np.tile(tVel[:, np.newaxis, np.newaxis],
                              (1, mom.shape[1], mom.shape[2]))
-            tmom0 = np.nansum(mom.data, axis=0)
-            tmom1 = np.nansum(VelArr * mom.data, axis=0) / tmom0
-            tmom2 = mom.data * np.square(VelArr - tmom1)
+            tmom0 = np.nansum(array, axis=0)
+            tmom1 = np.nansum(VelArr * array, axis=0) / tmom0
+            tmom2 = array * np.square(VelArr - tmom1)
             mom.data = np.sqrt(np.nansum(tmom2, axis=0) / tmom0)
         else:
             raise NotImplementedError("Moment not supported - yet.")
