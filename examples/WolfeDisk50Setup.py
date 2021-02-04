@@ -11,7 +11,7 @@ def set_model():
     Qube.file = DataFile
 
     # Trimming the Data Cube
-    center, sz, chan = [128, 128], [45, 45], [13, 36]
+    center, sz, chan = [128, 128], [45, 45], [6, 19]
     xindex = (center[0] - sz[0], center[0] + sz[0] + 1)
     yindex = (center[1] - sz[1], center[1] + sz[1] + 1)
     zindex = (chan[0], chan[1])
@@ -62,7 +62,7 @@ def set_model():
                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 1000},
              'Vcen': {'Value': 6.0, 'Unit': u.pix, 'Fixed': False,
                       'Conversion': None,
-                      'Dist': 'uniform', 'Dloc': 4, 'Dscale': 20},
+                      'Dist': 'uniform', 'Dloc': 0, 'Dscale': 20},
              'Disp': {'Value': 80.0, 'Unit': u.km/u.s, 'Fixed': False,
                       'Conversion': (50 * u.km / u.s) / (1 * u.pix),
                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 300}
