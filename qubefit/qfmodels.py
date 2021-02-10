@@ -436,7 +436,7 @@ def ThinSpiral(**kwargs):
 
 
 # THE FOLLOWING PROFILES HAVE NOT BEEN TESTED AND HAVE SOME BUGS IN THEM
-def ThickDisk(**kwargs):
+def _ThickDisk(**kwargs):
     """
     Create a model of a thick disk.
 
@@ -487,7 +487,7 @@ def ThickDisk(**kwargs):
     return Model
 
 
-def DispersionSphere(**kwargs):
+def _DispersionSphere(**kwargs):
 
     """ Spherical model with zero mean velocity. The only shift in frequencies
     is due to the dispersion of the model.
@@ -534,7 +534,7 @@ def DispersionSphere(**kwargs):
     return Model
 
 
-def TwoSpheres(**kwargs):
+def _TwoSpheres(**kwargs):
 
     # split up the kwargs into two different keyword cases for the two
     # different model spheres.
@@ -564,8 +564,8 @@ def TwoSpheres(**kwargs):
     kwargs2['par']['Disp'] = kwargs['par']['Disp2']
     kwargs2['convolve'] = False
 
-    Model1 = DispersionSphere(**kwargs1)
-    Model2 = DispersionSphere(**kwargs2)
+    Model1 = _DispersionSphere(**kwargs1)
+    Model2 = _DispersionSphere(**kwargs2)
 
     # simply add the two models
     Model = Model1 + Model2
@@ -577,7 +577,7 @@ def TwoSpheres(**kwargs):
     return Model
 
 
-def JetSphere(Convolve=True, **kwargs):
+def _JetSphere(Convolve=True, **kwargs):
 
     """ Spherical model with 'jet' (supports only R-dependence)
     """
@@ -647,7 +647,7 @@ def JetSphere(Convolve=True, **kwargs):
     return Model
 
 
-def SpiralGalaxy(Convolve=True, **kwargs):
+def _SpiralGalaxy(Convolve=True, **kwargs):
 
     """ This is a model of a thick disk galaxy that contains spiral arms.
     """

@@ -1,4 +1,4 @@
-# modules
+"""Base class used in the QubeFit package."""
 import numpy as np
 import copy
 from astropy.io import fits
@@ -13,19 +13,46 @@ from astropy.stats import sigma_clip
 
 
 class Qube(object):
+    """
+    Initate the Qube class.
 
-    """ Class for the (hopefully) easy handeling of a variety of data cubes
-    primarily tested for sub-mm. In particular, CASA and AIPS fits files can
-    be treated in a similar manner.
+    Class for handeling of a variety of data cubes. This includes reading
+    in the data cube, and preforming basic operations on the data cube. It
+    also allows for a couple of higher level operations, such as moment
+    generation and simple position-velocity diagrams. The cube has been
+    primarily tested and written for (sub)-mm data cubes, but can work with
+    a range of optical / NIR data cubes as well.
     """
 
     @classmethod
     def from_fits(cls, fitsfile, extension=0, **kwargs):
-
-        """ Read in a fits file. This is the primary way to load in a data
-        cube.
         """
+        Instantiate a Qube class from a fits file.
 
+        Read in a fits file. This is the primary way to load in a data
+        cube. The fits file will be parsed for a header and data. These will
+        be stored in the Qube class. Several other attributes will be
+        defined (most notably the beam, shape and instrument).
+
+        Parameters
+        ----------
+        cls : QUBE
+            Qube Class instance.
+        fitsfile : STRING
+            The name of the fits file to be read in.
+        extension : INT, optional
+            The extension of the fots file to read in. The default is 0.
+        **kwargs : DICT, optional
+            keyword arguments that can be directly passed into the Qube class.
+
+        Returns
+        -------
+        Qube
+            Will return an instance of the qubefit.qube.Qube class. The
+            instance should have the data and header attribute populated, as
+            well as several other minor data attributes.
+
+        """
         # initiate (currently blank)
         self = cls(**kwargs)
 
@@ -37,22 +64,55 @@ class Qube(object):
         self.__fix_header__()
 
         # adapt the header depending on the instrument and reduction software
-        self.__instr_redux__(hdu)
+        self.__instr_redux__()
+
+        # add beam
+        self.__add_beam__(hdu)
 
         return self
 
-    def __init__(self):
-
-        # Attributes
-        self.data = None
-        self.header = None
-
     def get_slice(self, xindex=None, yindex=None, zindex=None):
-
-        """ slice the data cube into smaller data cubes, this will update the
-        header correctly.
         """
+        Slice the data cube.
 
+        This method will slice the data cube to extract smaller cubes or
+        individual channels. For generality, the two spatial dimensions
+        are the x and y indices. The frequency/velocity/wavelength dimension
+        is denoted by the zindex. This method also updates the header files
+        with the new information.
+
+        Parameters
+        ----------
+        xindex : TUPLE or NUMPY.ARRAY, optional
+            The indices to use to slice in the x-direction. This can either
+            be a tuple, which will be intepreted as a range starting at the
+            first up to but NOT including the second value, or a numpy array
+            of indices. The default is None.
+        yindex : TUPLE or NUMPY.ARRAY, optional
+            The indices to use to slice in the y-direction. This can either
+            be a tuple, which will be intepreted as a range starting at the
+            first up to but NOT including the second value, or a numpy array
+            of indices. The default is None.
+        zindex : TUPLE or NUMPY.ARRAY, optional
+            The indices to use to slice in the z-direction. This can either
+            be a tuple, which will be intepreted as a range starting at the
+            first up to but NOT including the second value, or a numpy array
+            of indices. The default is None.
+
+        Raises
+        ------
+        ValueError
+            Can only crop two and three dimensional data. If another dimension
+            is selected, this will result in a ValueError.
+
+        Returns
+        -------
+        Qube
+            Return a Qube instance with the updated data and header of the
+            sliced data set (if present, the model, sig and variance are
+            will also be siced).
+
+        """
         # init
         Slice = copy.deepcopy(self)
 
@@ -104,57 +164,56 @@ class Qube(object):
 
     def calculate_sigma(self, ignorezero=True, fullarray=False, channels=None,
                         plot=False, plotfile='./sigma_estimate.pdf', **kwargs):
+        """
+        Calculate the Gaussian noise of the data.
 
-        """ This function will fit a Gaussian to the data and return the
-        sigma value. If the data has multiple channels it will do the 
-        calculation for each channel and return an array of sigma values with
-        length equal to the number of channels in the data.
+        This method will take the measurements of each channel, create a
+        histogram and fits a Gaussian function to the histogram. It will
+        return the Gaussian sigma of this fit as a noise estimate. This
+        assumes that 1) the nosie is Gaussian and 2) the signal does not
+        signficantly affect the noise property. If it does, then the data
+        should be masked first.
 
-        keywords:
-        ---------
-        ignorezero (Bool| True):
+        Parameters
+        ----------
+        ignorezero : BOOLEAN, optional
             If set, this will ignore any zero values in the array for the
             gaussian fitting. This is useful if masked values are set to
-            zero.
-
-        fullarray (Bool| False):
+            zero. The default is True.
+        fullarray : BOOLEAN, optional
             If set, the returned array will be a numpy array with the same
             shape as the input data, where each point corresponds to the
-            sigma value of that channel
-
-        channels (list| None):
+            sigma value of that channel. The default is False.
+        channels : NUMPY.ARRAY, optional
             The list of channels to calculate the sigma value for. This can
             be either a list or a numpy array. When not specfied or set to
-            None, the full range is taken.
-
-        plot (Bool| False):
+            None, the full range is taken. The default is None.
+        plot : BOOLEAN, optional
             If set a QA file is made of the Gaussian fits, to determine the
-            fit of the Gaussian.
-
-        plotfile (str| './sigma_estimate.pdf'):
+            fit of the Gaussian for each channel. The default is False.
+        plotfile : TYPE, optional
             The file in which to save the sigma QA plot.
-
-        doguess (Bool| True):
+            The default is './sigma_estimate.pdf'.
+        doguess : BOOLEAN, optional
             If set, the code will calculate the bin size and the intial
-            estimates for the gaussian fit
-
-        gausspar (list| None):
+            estimates for the gaussian fit. The default is True.
+        gausspar : LIST, optional
             If a list is given it is taken as the initial guesses for the
             Gaussian fit. This has to be set with the number of bins for
-            the histogram, otherwise doguess has to be set to True (which
-            will overwrite the values given here)
-
-        bins (int| None):
+            the histogram, otherwise doguess has to be set to True, which
+            will overwrite the values given here. The default is None.
+        bins : INT, optional
             The number of bins to use in the histogram. If not set, doguess
             needs to be set, which calculates this value.
 
-        Returns:
-        --------
-        float or nd.array of the sigma for each requested channel.
-        if full array is set, it will generate a new instance of Qube and
-        will return the array in the 'data' attribute for this Qube.
-        """
+        Returns
+        -------
+        FLOAT, NUMPY.ARRAY or Qube instance
+            The Gaussian noise (sigma) for each requested channel. If full
+            array is set, it will generate a new instance of Qube and
+            will return the array in the 'data' attribute for this Qube.
 
+        """
         # either 2D or 3D case
         if self.data.ndim == 2:
 
@@ -237,15 +296,65 @@ class Qube(object):
 
     def mask_region(self, ellipse=None, rectangle=None, value=None,
                     moment=None, channels=None, mask=None, applymask=True):
-
-        """ This function will mask the data cube.
         """
+        Mask a region of the data cube.
 
+        This method will mask the data cube. Several options for masking
+        are available. Either a rectangle or ellipse for regions can be
+        chosen or a specfiic value in the data cube. Finally, an option is
+        to mask the region from a summed cube (moment-zero). A mask can also
+        be read in and finally either the mask is returned as a numpy array,
+        or the mask is applied and another Qube instance is returned.
+        It should be noted that the masks are multiplicative.
+
+        Parameters
+        ----------
+        ellipse : TUPLE, optional
+            The 5-element tuple describing an ellipse (xc, yc, maj, min, ang).
+            Each of the values in the tuple correspond to: the center of the
+            ellipse in the x- and y-direction, (xc and yc), the length of the
+            major and minor axis (maj and min) and the angle of the major
+            axis (ang). The default is None.
+        rectangle : TUPLE, optional
+            The 4-element tuple describing the rectangles bottom left
+            (xb, yb) and uppper right (xt, yt) corners (xb, yb, xt, yt).
+            The default is None.
+        value : FLOAT or LIST, optional
+            Value used to mask everything below this value. This value can
+            also be a list with the same size as the number of channels, in
+            which case the comparison per channel is done piece-wise.
+            The default is None.
+        moment : FLOAT, optional
+            First a temporary moment image is created, using the channels
+            keyword. Then the cube will be masked for all pixels below
+            the value set by moment, which is given in terms of the Gaussian
+            noise sigma. The default is None.
+        channels : TUPLE or NUMPY.ARRAY, optional
+            Values used to slice the data in the spectral direction. This
+            only needs to be set if the moment mask is requested, and if not
+            set, it will use the full spetral range.
+            The default is None.
+        mask : NUMPY.ARRAY, optional
+            Predefined numpy array to use as a mask. The default is None.
+        applymask : BOOLEAN, optional
+            This will apply the mask and return a Qube instance. If this is
+            not set the mask will be returned as a numpy.array.
+            The default is True.
+
+        Returns
+        -------
+        NUMPY.ARRAY or Qube instance
+            If applymask is true the mask data set will be returned as a
+            Qubefit instance, if false, a numpy array of the mask will be
+            returned.
+
+        """
         # init
         MaskRegion = copy.deepcopy(self)
         Mask = np.ones_like(MaskRegion.data)
 
-        if ellipse is not None:  # Ellipse Reg.: [xcntr,ycntr,rmaj,rmin,angle]
+        # Ellipse: [xcntr,ycntr,rmaj,rmin,angle]
+        if ellipse is not None:
             # create indices array
             tidx = np.indices(MaskRegion.data.shape)
 
@@ -264,7 +373,8 @@ class Qube(object):
                              1, np.nan)
             Mask = Mask * tmask
 
-        if rectangle is not None:  # rectangular region
+        # Rectangle: [xb, yb, xt, yt]
+        if rectangle is not None:
             # create indices array
             tidx = np.indices(MaskRegion.data.shape)
 
@@ -275,6 +385,7 @@ class Qube(object):
 
             Mask = Mask * tmask
 
+        # Value: data > value
         if value is not None:  # reject values below this value
             if (type(value) is float or type(value) is int or
                     type(value) is np.float64):
@@ -288,21 +399,18 @@ class Qube(object):
 
             Mask = Mask * tmask
 
+        # Moment: mom0 > moment
         if moment is not None:
-            raise NotImplementedError('Need to define the moments')
             # create a temporary moment-zero image
-            if channels is None:
-                raise ValueError('Channels need to be set for moment-zero' +
-                                 ' masking!')
-            Moment0 = MaskRegion.calc_moment(moment=0, channels=channels)
-            MomentSig = Moment0.calc_sigma(bins=np.linspace(-2E-1, 2E-1, 100),
-                                           gausssd=0.05)
-            MomentMaskValue = np.ones_like(Moment0.data) * MomentSig * moment
-            MomentMask = np.where(Moment0.data >= MomentMaskValue, 1, np.nan)
+            Mom0 = MaskRegion.calculate_moment(moment=0, channels=channels)
+            MomSig = Mom0.calculate_sigma()
+            MomentMaskValue = np.ones_like(Mom0.data) * MomSig * moment
+            MomentMask = np.where(Mom0.data >= MomentMaskValue, 1, np.nan)
 
             tmask = np.tile(MomentMask, (MaskRegion.data.shape[0], 1, 1))
             Mask = Mask * tmask
 
+        # Set mask manually
         if mask is not None:
             Mask = Mask * mask
 
@@ -314,20 +422,60 @@ class Qube(object):
             return Mask
 
     def calculate_moment(self, moment=0, channels=None, restfreq=None,
-                         use_model=False):
+                         use_model=False, **kwargs):
         """
-        What are the units that come out??
+        Calculate the moments for the data.
 
-        Args:
-            moment:
-            channels:
-            restfreq:
+        This method will determine the moments for the data. These are
+        the moments w.r.t. the spectral axis, as is typical. A detailed
+        description of the different moments can be found elsewhere.
+        In summary, the moment 0 will yield an integrated measurement of
+        the flux density, the moment 1 will give an estimate of the velocity
+        field and the moment 2 is an estimate of the velocity dispersion.
 
-        Returns:
-            Qube:
+        Parameters
+        ----------
+        moment : INT, optional
+            Determines which moment to return. Currently only moments up to
+            and including 2 are defined. The default is 0.
+        channels : TUPLE or NUMPY.ARRAY, optional
+            The channels to use in creating the moment If not set, the full
+            data cube is used. The channel ranges can be given as a numpy
+            array or 2-element tuple with the first and last channel, where
+            the last channel is NOT included. The default is None.
+        restfreq : FLOAT, optional
+            The rest frequency to use (in Hz). It is recommended that this
+            is defined directly in the Qube instance, i.e., when it it read
+            in or right after. However, for convenience this can be
+            (re-)defined here. The default is None.
+        use_model : BOOLEAN, optional
+            If set to true, the moment will be calculated from the model
+            data attribute instead of the data attribute. The default is False.
+        **kwargs : VARIED, optional
+            This method will take in the keywords defined in the method
+            get_velocity. In particular the convention keyword which can
+            change the output unit of the moments (see below)
+
+        Raises
+        ------
+        NotImplementedError
+            Will raise a NotImplementedError if the moment keyword is set
+            to something else than 0, 1, 2.
+
+        Returns
+        -------
+        Qube
+            To output is a full instance of Qube where the data attribute
+            containts the moment calculation. The units of the output varies
+            and depend on the input and the convention used to get the
+            velocities. In general the first moment will be an integrated
+            flux density. For example if the data of the cube is in Jy/beam
+            and the velocities are in km/s (the default), then the moment-0
+            will have the units of Jy * km/s / beam. The moment-1 and
+            moment-2 will have the same unit as the velocity convention
+            which for the default is km/s.
 
         """
-
         # init
         mom = copy.deepcopy(self)
 
@@ -347,22 +495,27 @@ class Qube(object):
 
         # calculate the moment
         if moment == 0:     # 0th moment
-            dv = mom.__get_velocitywidth__()
-            mom.data = np.nansum(array, axis=0) * dv
+            dv = mom.get_velocitywidth(**kwargs, as_quantity=True)
+            mom.data = np.nansum(array, axis=0) * dv.value
+            mom.header['BUNIT'] = mom.header['BUNIT'] + dv.unit.to_string()
         elif moment == 1:   # 1st moment
-            tVel = mom._getvelocity_()
+            t0Vel = mom.get_velocity(**kwargs, as_quantity=True)
+            tVel = t0Vel.value
             VelArr = np.tile(tVel[:, np.newaxis, np.newaxis],
                              (1, mom.shape[1], mom.shape[2]))
             tmom0 = np.nansum(array, axis=0)
             mom.data = np.nansum(VelArr * array, axis=0) / tmom0
+            mom.header['BUNIT'] = t0Vel.unit.to_string()
         elif moment == 2:   # 2nd moment
-            tVel = mom._getvelocity_()
+            t0Vel = mom.get_velocity(**kwargs, as_quantity=True)
+            tVel = t0Vel.value
             VelArr = np.tile(tVel[:, np.newaxis, np.newaxis],
                              (1, mom.shape[1], mom.shape[2]))
             tmom0 = np.nansum(array, axis=0)
             tmom1 = np.nansum(VelArr * array, axis=0) / tmom0
             tmom2 = array * np.square(VelArr - tmom1)
             mom.data = np.sqrt(np.nansum(tmom2, axis=0) / tmom0)
+            mom.header['BUNIT'] = t0Vel.unit.to_string()
         else:
             raise NotImplementedError("Moment not supported - yet.")
 
@@ -372,28 +525,84 @@ class Qube(object):
 
         return mom
 
-    def gaussian_moment(self, mom1=None, mom2=None, channels=None):
+    def gaussian_moment(self, mom1=None, mom2=None, channels=None,
+                        use_model=False, **kwargs):
+        """
+        Calculate the Gaussian 'moments' of the cube.
 
+        This method will fit a Gaussian to the spectrum of each spatial
+        pixel. The velocity field and velocity dispersion field are then
+        estimated from the velocity shift of the Gaussian and the width of
+        the Gaussian, respectively. This method is often more robust in the
+        case of low S/N and lower resolution (see the reference paper). To
+        help provide better convergence of the fitting routine, it is
+        recommended to supply initial guesses to the velocity field and
+        dispersion field, which probably come from the method
+        'calculate_moment'.
+
+        This method can be very slow for a large data cube in the spatial
+        direction.
+
+        Parameters
+        ----------
+        mom1 : Qube, optional
+            This is a qube instance that contains the initial guess for the
+            velocity field. If not given this estimate will be calculated
+            from the data cube (not recommended). The default is None.
+        mom2 : Qube, optional
+            This is a qube instance that contains the initial guess for the
+            velocity dispersion field. If not given this estimate will be
+            calculated from the data cube (not recommended). The default is
+            None.
+        channels : NUMPY.ARRAY or TUPLE, optional
+            The channels to use in creating the gaussian 'moments' If not set,
+            the full data cube is used. The channel ranges can be given as a
+            numpy array or 2-element tuple with the first and last channel,
+            where the last channel is NOT included. It is recommended to use
+            a large range in channels, so the zero level can be accurately
+            estimated, which is one of the strengths of this appraoch.
+            The default is None.
+        use_model : BOOLEAN, optional
+            If set to true, the moment will be calculated from the model
+            data attribute instead of the data attribute. The default is False.
+        **kwargs : VARIED , optional
+            This method will take in the keywords defined in the method
+            get_velocity. In particular the convention keyword which can
+            change the output unit of the moments.
+
+        Returns
+        -------
+        mom1 : Qube
+            A qube instance where the data attribute contains the velocity
+            field estimate. Typically in km/s.
+        mom2 : Qube
+            A qube instance where the data attribute contains the velocity
+            dispersion field estimate. Typically in km/s.
+
+        """
         # init
         data = copy.deepcopy(self)
 
-        # slice if needed
+        # slice if wanted
         if channels is not None:
             data = data.get_slice(zindex=channels)
 
         # the guesses:
         if mom1 is None:
-            mom1 = data.calculate_moment(moment=1)
+            mom1 = data.calculate_moment(moment=1, use_model=use_model)
         if mom2 is None:
-            mom2 = data.calculate_moment(moment=2)
+            mom2 = data.calculate_moment(moment=2, use_model=use_model)
 
         # get velocity array
-        VelArr = data._getvelocity_()
+        VelArr = data.get_velocity(**kwargs)
 
         # now go over each spatial pixel and compute moments
         for ii in np.arange(mom1.shape[-1]):
             for jj in np.arange(mom1.shape[-2]):
-                RowData = data.data[:, jj, ii]
+                if use_model:
+                    RowData = data.model[:, jj, ii]
+                else:
+                    RowData = data.data[:, jj, ii]
                 isfin = np.isfinite(RowData)
                 if np.sum(isfin) > 3:
                     gausspar = [np.nanmax(RowData), mom1.data[jj, ii],
@@ -411,11 +620,353 @@ class Qube(object):
 
         return mom1, mom2
 
-    def generative_moment(self, variance=None, cwidths=np.arange(1, 21, 1)):
+    def get_spec1d(self, continuum_correct=False, limits=None,
+                   beam_correct=True, use_model=False, **kwargs):
+        """
+        Generate a 1D spectrum from the data cube.
 
+        This method will extract a spectrum from the data cube integrated
+        over an area This is a simple sum over all of the pixels in the
+        data cube and therefore it probably is most useful after some
+        masking has been applied using the method 'mask_region'. Standard
+        is to correct for the beam to get a flux density from the region,
+        i.e., if the data cube is in Jy/beam then the result will be a
+        flux density in Jy. It is also possible to correct for any
+        residual continuum.
+
+        Parameters
+        ----------
+        continuum_correct: BOOLEAN, optional
+            If set, this will correct the spectrum for any potential
+            continuum flux by fitting a second order polynomial to the
+            spectrum outside the channels given by limits.
+            The default is False.
+        limits: LIST, optional
+            Two-element list which contains the limits outside which the
+            continuum will be fit, if set. The default is None.
+        beam_correct: BOOLEAN, optional
+            Correct the flux by dividing by the area of the beam. This
+            should be the default when dealing with interferometric data
+            in Jy/beam. The default is True.
+        use_model : BOOLEAN, optional
+            If set to true, the moment will be calculated from the model
+            data attribute instead of the data attribute. The default is False.
+        **kwargs : VARIED , optional
+            This method will take in the keywords defined in the method
+            get_velocity. In particular the convention keyword which can
+            change the output unit of the moments.
+
+        Returns
+        -------
+            NUMPY.ARRAY, NUMPY.ARRAY
+                Summed flux and 'Velocity' are returned. The first is in the
+                same units as the data cube, whereas the latter quantity has
+                the units as defined by the convention. This is either a
+                velocity, frequency or wavelength array. The default is to
+                return a velocity array in km/s.
+
+        """
+        # select the data
+        if use_model:
+            data = self.model
+        else:
+            data = self.data
+
+        # sum up the pixels in each channel
+        if data.ndim == 2:
+            spec = np.nansum(self.data)
+        if data.ndim == 3:
+            spec = np.nansum(np.nansum(data, axis=1), axis=1)
+
+        # divide by the number of pixels per beam to get flux density
+        if beam_correct:
+            # find the beam size (in pixels)
+            beam_area = ((self.beam['BMAJ'] * self.beam['BMIN'] * np.pi) /
+                         (4 * np.log(2)))
+            beam_pix = beam_area / (np.abs(self.header['CDELT1'] *
+                                           self.header['CDELT2']))
+            spec = spec / beam_pix
+
+        # deal with the 'velocity' array (or freq, etc).
+        if data.ndim == 2:
+            vel = self.header['RESTFRQ']
+        if data.ndim == 3:
+            vel = self.get_velocity(**kwargs)
+
+        # apply correction for potential continuum emission
+        if continuum_correct:
+            if limits is None:
+                raise ValueError('If you want to continuum corerct, you need' +
+                                 ' to set the limits keyword. If you want to' +
+                                 ' fit the while spectrum set limits=[0, 0]')
+            spec = __correct_flux__(spec, vel, limits)
+
+        return spec, vel
+
+    def pvdiagram(self, PA, center, width=3., vshift=0.0, scale=1.,
+                  use_model=True, **kwargs):
+        """
+        Create the PV diagram along the given line.
+
+        This method will take a data or model attribute from the qube instance,
+        and create a 2D image with position along the axis and velocity on the
+        second axis. It uses scipy's 'rotate' to rotate the datacube along the
+        axis defined by the PA and center and then extracts the total flux
+        along the 'slit' with a width given by the width keyword. The final
+        2D output has been flipped (if needed) to have the velocity increasing
+        upward and the extent of the pvdata is returned.
+
+        NOTE: Rotate introduces a problem in that it does not conserve the
+        total flux of a cube when rotated. This effect is often small (<10%),
+        but should be kept in mind when looking at these pv diagrams.
+
+        Parameters
+        ----------
+        PA : FLOAT
+            The position angle of the axis used to generate the PV diagram in
+            degrees east of north.
+        center : Tuple
+            Two-element tuple describing the center of the PV line, where
+            the first value is the x position and the second value is the
+            y position.
+        width : INT, optional
+            The 'width' of the 'slit'. The slit width is actually defined
+            as two times this width plus 1 (2 x width + 1). Because of the
+            issues with rotation, it is not advisable to set this value to
+            0 (i.e., a width of exactly 1 pixel). The default is 3.
+        vshift: FLOAT, optional
+            This keyword allows the velocity to be shifted w.r.t. to the
+            zero velocity as defined by the rest frequency of the cube. This
+            is useful to make small velocity corrections.
+        scale: FLOAT, optional
+            The scale to use for the pixels (x and y). This can provide a
+            convenient way to convert the distance along the PV line from
+            the unit pixels to more useful quantities such as kpc or arcsec.
+            The default is 1.
+        **kwargs : VARIED , optional
+            This method will take in the keywords defined in the method
+            get_velocity. In particular the convention keyword which can
+            change the output unit of the moments.
+
+        Returns
+        -------
+        DICT
+            The method returns a dictionary with four items defined.
+            'pvdata', which is a numpy.array that contains the PV array of
+            values'. 'extent', which is a four-element tuple with the extrema
+            of the extent of the pv array, i.e., (xmin, xmax, vmin, vmax).
+            This can be used with the extent keyword of
+            matplotlib.pyplot.imshow. 'position', which is a numpy.array of
+            positions defining each pixel along the PV line. Finally,
+            'velocity' is a numpy.array of velocities defining each channel
+            of the spectrum.
+
+        """
+        # init
+        data = copy.deepcopy(self)
+
+        # rotate using spline interpolation
+        PA = PA + 90.       # change to x-axis def. (rotate clockwise)
+        # need to change NaN into real numbers (zeroes) (Scipy v0.19.1)
+        data.data = np.nan_to_num(data.data)
+        data.data = rotate(data.data, PA, (1, 2))
+
+        # position of the center of rotation w.r.t. the middle of the data cube
+        Middle = (np.array([data.shape[2], data.shape[1]]) - 1) / 2.
+        Center = center - Middle
+
+        # position of middle of the rotated data cube
+        RotMiddle = (np.array([data.data.shape[2],
+                               data.data.shape[1]]) - 1) / 2.
+
+        # position of the center in the rotated datacube
+        PArad = PA * np.pi / 180.
+        RotCenter = [(Center[0] * np.cos(PArad) + Center[1] *
+                      np.sin(PArad) + RotMiddle[0]),
+                     (-1 * Center[0] * np.sin(PArad) + Center[1] *
+                      np.cos(PArad) + RotMiddle[1])]
+
+        # extract a pv slice along the y-axis (along the slit)
+        box = [int(round(RotCenter[1]) - width // 2),
+               int(round(RotCenter[1]) + width // 2 + 1)]
+        data.data = data.data[:, box[0]:box[1], :]
+        pvarray = np.nanmean(data.data, axis=1)
+
+        # axes vectors
+        pixposition = np.arange(pvarray.shape[1]) - RotCenter[0]
+        position = pixposition * scale
+        velocity = data.get_velocity(**kwargs) - vshift
+        if velocity[0] > velocity[1]:
+            pvarray = np.flipud(pvarray)
+            velocity = np.flip(velocity, axis=0)
+
+        # extent of the pvdata
+        dv = np.mean(velocity[1:] - velocity[:-1])
+        extent = ((pixposition[0] - 0.5) * scale,
+                  (pixposition[np.size(pixposition) - 1] + 0.5) * scale,
+                  velocity[0] - dv, velocity[np.size(velocity) - 1] + dv)
+
+        return {'pvdata': pvarray, 'extent': extent, 'position': position,
+                'velocity': velocity}
+
+    def to_fits(self, fitsfile='./cube.fits'):
+        """
+        Write the qube instance to fits file.
+
+        Parameters
+        ----------
+        fitsfile : STRING, optional
+            The name of the fits file to save the qube instance to.
+            The default is './cube.fits'.
+
+        Returns
+        -------
+        None.
+
+        """
+        # save the cube as a fits file
+        Fit1 = fits.PrimaryHDU(self.data, header=self.header)
+
+        # if the image hasa a single beam (i.e., one channel such as a
+        # continuum image or moment image), then store the beam in the
+        # primary header and remove the CASAMBM
+        if self.beam['BMAJ'].size == 1:
+            self.header['BMAJ'] = self.beam['BMAJ']
+            self.header['BMIN'] = self.beam['BMIN']
+            self.header['BPA'] = self.beam['BPA']
+            self.header.remove('CASAMBM', ignore_missing=True)
+            Fit = fits.PrimaryHDU(self.data, header=self.header)
+            Fit.writeto(fitsfile, overwrite=True)
+        else:
+            Fit1 = fits.PrimaryHDU(self.data, header=self.header)
+            # Some fixes to the multibeam structure
+            Beam = Table([self.beam['BMAJ'] * 3600,
+                          self.beam['BMIN'] * 3600,
+                          self.beam['BPA'],
+                          np.arange(self.beam['CHAN'].size).astype('i4'),
+                          self.beam['POL']],
+                         names=('BMAJ', 'BMIN', 'BPA', 'CHAN', 'POL'))
+            Beam['BMAJ'].unit = 'arcsec'
+            Beam['BMIN'].unit = 'arcsec'
+            Beam['BPA'].unit = 'deg'
+            BeamHeader = fits.header.Header()
+            BeamHeader.extend((('NCHAN', self.beam['CHAN'].size), ('NPOL', 1)))
+
+            Fit2 = fits.BinTableHDU(Beam, name='BEAMS', header=BeamHeader,
+                                    ver=1)
+            Fit = fits.HDUList([Fit1, Fit2])
+            Fit.writeto(fitsfile, overwrite=True)
+
+    # some auxilliary calls for potentially useful information
+    def get_velocity(self, convention='radio', channels=None,
+                     as_quantity=False):
+        """
+        Get 'velocities' of the channels in a data cube.
+
+        This function will take the header information of the third
+        dimension and the rest frequency defined also in the header, and
+        convert the frequency values (using astropy's units and
+        equivalencies package) to velocities.
+
+        Parameters
+        ----------
+        convention : STRING, optional
+            The convention used for converting the frequencies to velocities.
+            For possible choices see the astropy.equivalencies documentation.
+            They are 'radio', 'optical', 'relativistic'. In addition, the
+            'frequency' and 'wavelength' can be give, which will return the
+            array in frequency (Hz) or wavelength (m). The default is 'radio'.
+        channels : NUMPY.ARRAY, optional
+            If None then get velocities for all of the channels in the data
+            array. otherwise only the velocities of those channels that are
+            specfied are returned. The default is None.
+        as_quantity : BOOLEAN, optional
+            If set, it will return the array as a astropy.quantity instead of
+            a unitless numpy.array. The default is False.
+
+        Raises
+        ------
+        ValueError
+            Method will raise a ValueError if the 'CTYPE3' in the header has
+            a value that is unknown.
+
+        Returns
+        -------
+            NUMPY.ARRAY or ASTROPY.QUANTITY
+                'Velocity' array (in km/s or Hz, m)
+
+        """
+        # get the channels/values to convert
+        if channels is None:
+            channels = np.arange(self.header["NAXIS3"])
+
+        # convert the given header spectral units to a frequency array
+        Arr = ((channels - self.header["CRPIX3"] + 1) *
+               self.header["CDELT3"] + self.header["CRVAL3"])
+
+        RestFreq = self.header['RESTFRQ'] * u.Hz
+        if self.header['CTYPE3'] == 'FREQ':
+            FreqArr = Arr * u.Hz
+        elif self.header['CTYPE3'] == 'FELO-HEL':
+            FreqArr = RestFreq / (1 - Arr / const.c.value)
+        elif self.header['CTYPE3'] == 'AWAV':
+            FreqArr = (const.c / (Arr * u.AA)).to(u.Hz)
+        elif self.header['CTYPE3'] == 'VOPT':
+            Velocity = u.Quantity(Arr,
+                                  unit=self.header['CUNIT3']).to('km/s')
+            return Velocity
+        elif self.header['CTYPE3'] == 'VRAD':
+            Velocity = u.Quantity(Arr,
+                                  unit=self.header['CUNIT3']).to('km/s')
+            return Velocity
+        else:
+            raise ValueError(self.header['CTYPE3'])
+
+        # now convert the FreqArr into a 'velocity'
+        if convention == 'radio':
+            Freq2Vel = u.doppler_radio(RestFreq)
+            Velocity = FreqArr.to(u.km / u.s, equivalencies=Freq2Vel)
+        elif convention == 'optical':
+            Freq2Vel = u.doppler_optical(RestFreq)
+            Velocity = FreqArr.to(u.km / u.s, equivalencies=Freq2Vel)
+        elif convention == 'relativistic':
+            Freq2Vel = u.doppler_relativistic(RestFreq)
+            Velocity = FreqArr.to(u.km / u.s, equivalencies=Freq2Vel)
+        elif convention == 'frequency':
+            Velocity = FreqArr
+        elif convention == 'wavelength':
+            Velocity = FreqArr.to(u.m, equivalencies=u.spectral())
+        else:
+            raise ValueError('Doppler convention is not defined')
+
+        if as_quantity:
+            return Velocity
+        else:
+            return Velocity.value
+
+    def get_velocitywidth(self, **kwargs):
+        """
+        Calculate the channel width.
+
+        This is a small function that will get the velocities and calculate
+        the median distance between them (i.e., width of the velocity channel).
+        It inherits the same keywords as the get_velocity method.
+        """
+        VelArr = self.get_velocity(**kwargs)
+        return np.median(np.abs(VelArr - np.roll(VelArr, 1)))
+
+    def _generative_moment_(self, variance=None, cwidths=np.arange(1, 21, 1)):
+        """
+        Generate a slew of moments to get the 'best' width.
+
+        This method will calculate a bunch of different moment zero images
+        and finds the width that results in the highest signal to nosie
+        ratio. This can be used as a quick seach algorithm or as a way to
+        show both narrow and wide emission features at the same time.
+        """
         # create a slew of moment-0 images
-        VelArr = self._getvelocity_()
-        DV = self.__get_velocitywidth__()
+        VelArr = self.get_velocity()
+        DV = self.get_velocitywidth()
 
         if variance is None:
             variance = np.square(self.calculate_sigma())
@@ -450,73 +1001,15 @@ class Qube(object):
 
         return Mom0, SNRmax, VelStart, VelEnd
 
-    def get_spec1d(self, convention='radio', continuumcorrect=False,
-                   limits=None, beamcorrect=True, **kwargs):
-
+    def _bootstrap_sigma_(self, mask, nboot=500, asymmetric=False,
+                          gaussian=True, **kwargs):
         """
-        Generate a 1D spectrum from the Cube
+        Calculate the typical sigma by moving a mask around randomly.
 
-        keywords:
-        ---------
-
-        convention: (String | 'Radio'):
-            Which Doppler convention to use to calculate the velocities.
-
-        continuumcorrect: (Bool | False):
-            Will correct the spectrum for any potential continuum flux by
-            fitting a second order polynomial to the spectrum outside the
-            channels given by limits.
-
-        limits: (tuple | None):
-            Two-element tuple which contains the limits outside which the
-            continuum can be fit.
-
-        beamcorrect: (Bool | False):
-            Correct the flux by dividing by the area of the beam. This
-            should be the default when dealing with interferometric data
-            in Jy/beam.
-
-        Returns:
-        --------
-            np.ndarray, np.ndarray: Summed flux and 'Velocity'
+        This method will estimate the uncertainty by moving a mask around
+        at randowm places and redoing the flux measurement. This works OK
+        only for those masks that are bigger than the beam.
         """
-
-        # sum up the pixels in each channel
-        if self.data.ndim == 2:
-            spec = np.nansum(self.data)
-        if self.data.ndim == 3:
-            spec = np.nansum(np.nansum(self.data, axis=1), axis=1)
-
-        # divide by the number of pixels per beam to get flux density
-        if beamcorrect:
-            # find the beam size (in pixels)
-            beam_area = ((self.beam['BMAJ'] * self.beam['BMIN'] * np.pi) /
-                         (4 * np.log(2)))
-            beam_pix = beam_area / (np.abs(self.header['CDELT1'] *
-                                           self.header['CDELT2']))
-            spec = spec / beam_pix
-
-        # deal with the 'velocity' array (or freq, etc).
-        if self.data.ndim == 2:
-            vel = self.header['RESTFRQ']
-        if self.data.ndim == 3:
-            vel = self._getvelocity_(convention=convention)
-
-        # apply correction for potential continuum emission
-        if continuumcorrect:
-            if limits is None:
-                raise ValueError('Please set the limits keyword!')
-            spec = __correct_flux__(spec, vel, limits)
-
-        return spec, vel
-
-    def bootstrap_sigma(self, mask, nboot=500, asymmetric=False,
-                        gaussian=True, **kwargs):
-
-        """calculate the typical sigma for the cube by moving a mask around
-        randomly
-        """
-
         # recast a 2d array into 3d
         if self.data.ndim == 2:
             shape = (1,) + self.data.shape
@@ -553,191 +1046,16 @@ class Qube(object):
         else:
             return np.std(SpecArr, axis=1)
 
-    def pvdiagram(self, PA, center, width=1., vshift=0.0, convention='radio',
-                  scale=1.):
+    ################################################
+    # SOME INTERNAL CALLS FOR FIXING HEADERS, ETC. #
 
-        """This is a direct port of the code in mncube. It will take a qube
-        and create a 2D image with position along the axis and velocity on the
-        second axis. It uses scipy's 'rotate' to rotate the datacube along the
-        axis defined by the PA and center and then extracts the total flux
-        along the 'slit' with a width given by the width keyword. The final
-        2D output has been flipped (if needed) to have the velocity increasing
-        upward and the extent of the pvdata is returned.
+    def __init__(self):
+        """Initiate the Qube instance (currently empty)."""
+        self.data = None
+        self.header = None
 
-        NOTE: Rotate introduces a problem in that it does not conserve the
-        total flux of a cube when rotated.
-
-        Inputs for the function are:
-
-        qube:       the data qube to use.
-        PA:         position angle of the axis used to generate the PV diagram
-        center:     the center of rotation.
-        width:      2*width+1 is the size of the box used for extraction
-        vshift:     shift in velocity for all values (w.r.t. the 'Restfrq'
-                    of the qube).
-        convention: convention to used for frequency-velocity conversion the
-                    default is 'radio'.
-        scale:      scale used for the pixels (x and y). default is 1.
-
-        The function returns
-        position:   vector of values (scaled) of the position along the axis
-        velocity:   vector of values (in km/s) of the velocity of the
-                    observations
-        extent:     extent of the pv data (to use with the extent keyword of
-                    matplotlib.pyplot.imshow)
-        pvdata:     2D array of the pv diagram
-        """
-
-        # init
-        data = copy.deepcopy(self)
-
-        # rotate using spline interpolation
-        PA = PA + 90.       # change to x-axis def. (rotate clockwise)
-        # need to change NaN into real numbers (zeroes) (Scipy v0.19.1)
-        data.data = np.nan_to_num(data.data)
-        data.data = rotate(data.data, PA, (1, 2))
-
-        # position of the center of rotation w.r.t. the middle of the data cube
-        Middle = (np.array([data.shape[2], data.shape[1]]) - 1) / 2.
-        Center = center - Middle
-
-        # position of middle of the rotated data cube
-        RotMiddle = (np.array([data.data.shape[2],
-                               data.data.shape[1]]) - 1) / 2.
-
-        # position of the center in the rotated datacube
-        PArad = PA * np.pi / 180.
-        RotCenter = [(Center[0] * np.cos(PArad) + Center[1] *
-                      np.sin(PArad) + RotMiddle[0]),
-                     (-1 * Center[0] * np.sin(PArad) + Center[1] *
-                      np.cos(PArad) + RotMiddle[1])]
-
-        # extract a pv slice along the y-axis (along the slit)
-        box = [int(round(RotCenter[1]) - width // 2),
-               int(round(RotCenter[1]) + width // 2 + 1)]
-        data.data = data.data[:, box[0]:box[1], :]
-        pvarray = np.nanmean(data.data, axis=1)
-
-        # axes vectors
-        pixposition = np.arange(pvarray.shape[1]) - RotCenter[0]
-        position = pixposition * scale
-        velocity = data._getvelocity_(convention=convention) - vshift
-        if velocity[0] > velocity[1]:
-            pvarray = np.flipud(pvarray)
-            velocity = np.flip(velocity, axis=0)
-
-        # extent of the pvdata
-        dv = np.mean(velocity[1:] - velocity[:-1])
-        extent = ((pixposition[0] - 0.5) * scale,
-                  (pixposition[np.size(pixposition) - 1] + 0.5) * scale,
-                  velocity[0] - dv, velocity[np.size(velocity) - 1] + dv)
-
-        return position, velocity, extent, pvarray
-
-    def save(self, fitsfile='./cube.fits'):
-
-        # save the cube as a fits file
-        Fit1 = fits.PrimaryHDU(self.data, header=self.header)
-
-        # now make numerous fixes to the beam array so it can be
-        # read in using CASA
-        # renumber channels from 0 to number of channels
-        # fix for single beams
-        if self.beam['BMAJ'].size == 1:
-            self.beam['BMAJ'] = np.array([self.beam['BMAJ']])
-            self.beam['BMIN'] = np.array([self.beam['BMIN']])
-            self.beam['BPA'] = np.array([self.beam['BPA']])
-            self.beam['POL'] = np.array([self.beam['POL']])
-
-        Beam = Table([self.beam['BMAJ'] * 3600,
-                      self.beam['BMIN'] * 3600,
-                      self.beam['BPA'],
-                      np.arange(self.beam['CHAN'].size).astype('i4'),
-                      self.beam['POL']],
-                     names=('BMAJ', 'BMIN', 'BPA', 'CHAN', 'POL'))
-        Beam['BMAJ'].unit = 'arcsec'
-        Beam['BMIN'].unit = 'arcsec'
-        Beam['BPA'].unit = 'deg'
-        BeamHeader = fits.header.Header()
-        BeamHeader.extend((('NCHAN', self.beam['CHAN'].size), ('NPOL', 1)))
-
-        Fit2 = fits.BinTableHDU(Beam, name='BEAMS', header=BeamHeader, ver=1)
-        Fit = fits.HDUList([Fit1, Fit2])
-        Fit.writeto(fitsfile, overwrite=True)
-
-    # some auxilliary calls for potentially useful information
-    def _getvelocity_(self, convention='radio', channels=None):
-
-        """ This function will take the header information of the third
-        dimension and the rest frequency defined also in the header, and
-        convert the frequency values (using astropy's units and
-        equivalencies package) to velocities. This function is used in
-        generating moment images (1 and higher), but can also be called by
-        the user to get the velocities of a certain channel or fraction of a
-        channel.
-
-        keywords:
-        ---------
-        convention (str|default: 'radio')
-            The convention used for converting the frequencies to velocities.
-            Default is 'radio' but can also be 'optical', 'relativistic' and
-            'frequency', in the latter the frequency array/value is returned.
-        channels (list|default: None):
-            If None then get velocities for all of the channels in the data
-            array. otherwise only the velocities of those channels that are
-            specfied are returned.
-
-        Returns:
-        --------
-            np.ndarray:  Velocity values (in km/s or Hz)
-        """
-
-        # get the channels/values to convert
-        if channels is None:
-            channels = np.arange(self.header["NAXIS3"])
-
-        # convert the given header spectral units to a frequency array
-        Arr = ((channels - self.header["CRPIX3"] + 1) *
-               self.header["CDELT3"] + self.header["CRVAL3"])
-
-        RestFreq = self.header['RESTFRQ'] * u.Hz
-        if self.header['CTYPE3'] == 'FREQ':
-            FreqArr = Arr * u.Hz
-        elif self.header['CTYPE3'] == 'FELO-HEL':
-            FreqArr = RestFreq / (1 - Arr / const.c.value)
-        elif self.header['CTYPE3'] == 'AWAV':
-            FreqArr = (const.c / (Arr * u.AA)).to(u.Hz)
-        elif self.header['CTYPE3'] == 'VOPT':
-            Velocity = u.Quantity(Arr,
-                                  unit=self.header['CUNIT3']).to('km/s').value
-            return Velocity
-        elif self.header['CTYPE3'] == 'VRAD':
-            Velocity = u.Quantity(Arr,
-                                  unit=self.header['CUNIT3']).to('km/s').value
-            return Velocity
-        else:
-            raise ValueError(self.header['CTYPE3'])
-
-        # now convert the FreqArr into a 'velocity'
-        if convention == 'radio':
-            Freq2Vel = u.doppler_radio(RestFreq)
-            Velocity = FreqArr.to(u.km / u.s, equivalencies=Freq2Vel).value
-        elif convention == 'optical':
-            Freq2Vel = u.doppler_optical(RestFreq)
-            Velocity = FreqArr.to(u.km / u.s, equivalencies=Freq2Vel).value
-        elif convention == 'relativistic':
-            Freq2Vel = u.doppler_relativistic(RestFreq)
-            Velocity = FreqArr.to(u.km / u.s, equivalencies=Freq2Vel).value
-        elif convention == 'frequency':
-            Velocity = FreqArr.value
-        else:
-            raise ValueError('Doppler convention is not defined')
-
-        return Velocity
-
-    # SOME INTERNAL CALLS FOR FIXING HEADERS, ETC.
     def __fix_header__(self):
-
+        """Fix the header for empty axes."""
         # update the NAXIS keywords
         axes = ['NAXIS1', 'NAXIS2', 'NAXIS3', 'NAXIS4']
         for cnt, axis in enumerate(axes):
@@ -768,45 +1086,118 @@ class Qube(object):
             for key in keys:
                 self.header.remove(key, ignore_missing=True)
 
-    def __instr_redux__(self, hdu):
+    def __instr_redux__(self):
+        """
+        Assign the instrument/data reduction data attribute.
 
-        # perform some 'tests' on the header to see what instrument
-        # or package was used then change header
-        # and add beam (if applicable)
+        This function will assign the instrument and data reduction
+        software attribute. This will be used also to define some telescope
+        specific 'fixes' to the data cube to read in the file correctly.
+        """
+        inst_red = {'ALMA': self.__ALMA__, 'EVLA': self.__EVLA__,
+                    'Hale5m': self.__PCWI__, 'Keck II': self.__KCWI__,
+                    'NOEMA': self.__NOEMA__, 'ESO-VLT-U4': self.__MUSE__}
+        inst_red[self.header['TELESCOP']]()
 
-        if self.header['TELESCOP'] == 'ALMA':
-            if 'AIPS' in self.header.tostring():
-                self.instr = 'ALMA_AIPS'
-                self.__AIPSfix__()
-            else:
-                self.instr = 'ALMA_CASA'
-
-        elif self.header['TELESCOP'] == 'EVLA':
-            if 'AIPS' in self.header.tostring():
-                self.instr = 'EVLA_AIPS'
-                self.__AIPSfix__()
-            else:
-                self.instr = 'EVLA_CASA'
-
-        elif self.header['TELESCOP'] == 'Hale5m':
-            self.instr = 'PCWI_IDL'
-            self.__CWIfix__()
-
-        elif self.header['TELESCOP'] == 'Keck II':
-            self.instr = 'KCWI'
-            self.__KCWIfix__()
-        elif self.header['TELESCOP'] == 'NOEMA':
-            self.instr = 'NOEMA_GILDAS'
-            self.__GILDASfix__()
+    def __ALMA__(self):
+        """Fix for ALMA, assuming reduction with AIPS or CASA."""
+        if 'AIPS' in self.header.tostring():
+            self.instr = 'ALMA_AIPS'
+            self.__AIPS__()
         else:
-            raise ValueError('Instrument not supported yet.')
+            self.instr = 'ALMA_CASA'
 
-        # add beam seperately
-        self.__add_beam__(hdu)
+    def __EVLA__(self):
+        """Fix for EVLA, assuming reduction with AIPS or CASA."""
+        if 'AIPS' in self.header.tostring():
+            self.instr = 'EVLA_AIPS'
+            self.__AIPS__()
+        else:
+            self.instr = 'EVLA_CASA'
+
+    def __NOEMA__(self):
+        """Fix for NOEMA and GILDAS."""
+        self.instr = 'NOEMA_GILDAS'
+        # rename the rest frequency (if needed)
+        if 'RESTFREQ' in self.header and 'RESTFRQ' not in self.header:
+            self.header.rename_keyword('RESTFREQ', 'RESTFRQ')
+        # add cunit3 keyword
+        if 'CUNIT3' not in self.header:
+            self.header['CUNIT3'] = 'm/s'
+
+    def __KCWI__(self):
+        """Fix for KCWI."""
+        self.instr = 'KCWI'
+        # add RESTFRQ keyword to the header
+        restfreq = const.c .value / (self.header['RESTWAV'] * 1E-10)
+        self.header.set('RESTFRQ', restfreq)
+
+        #  add CDELT3 keyword and convert values to frequency
+        cdelt3 = self.header['CD3_3']
+        self.header.set('CDELT3', cdelt3)
+
+        # add some 'fake' beam parameters these should be first
+        # updated to the seeing values of the data.
+        self.header.set('BMAJ', 1.0 / 3600.)
+        self.header.set('BMIN', 1.0 / 3600.)
+        self.header.set('BPA',  0.0)
+
+    def __PCWI__(self):
+        """Fix for Palomar CWI."""
+        self.instr = 'PCWI_IDL'
+        # add RESTFRQ keyword to the header
+        restfreq = const.c .value / (self.header['RESTWAV'] * 1E-10)
+        self.header.set('RESTFRQ', restfreq)
+
+        #  add CDELT3 keyword and convert values to frequency
+        cdelt3 = self.header['CD3_3']
+        self.header.set('CDELT3', cdelt3)
+
+        # add some 'fake' beam parameters these should be first
+        # updated to the seeing values of the data.
+        self.header.set('BMAJ', 1.0 / 3600.)
+        self.header.set('BMIN', 1.0 / 3600.)
+        self.header.set('BPA',  0.0)
+
+    def __MUSE__(self):
+        """Fix for MUSE."""
+        self.instr = 'MUSE_PIPE'
+        # add RESTFRQ keyword to the header
+        restfreq = const.c .value / (self.header['RESTWAV'] * 1E-10)
+        self.header.set('RESTFRQ', restfreq)
+
+        #  add CDELT3 keyword and convert values to frequency
+        cdelt3 = self.header['CD3_3']
+        self.header.set('CDELT3', cdelt3)
+
+        # add some 'fake' beam parameters these should be first
+        # updated to the seeing values of the data.
+        self.header.set('BMAJ', 1.0 / 3600.)
+        self.header.set('BMIN', 1.0 / 3600.)
+        self.header.set('BPA',  0.0)
+
+    def __AIPS__(self):
+        """Fix specific to AIPS to deal with the beam."""
+        # rename the rest frequency (if needed)
+        if 'RESTFREQ' in self.header and 'RESTFRQ' not in self.header:
+            self.header.rename_keyword('RESTFREQ', 'RESTFRQ')
+
+        # look for a line like this in the history to get beam information
+        # HISTORY AIPS CLEAN  BMAJ=1.7599E-03  BMIN=1.5740E-03  BPA=2.61
+        for line in self.header['History']:
+            if 'BMAJ' in line:
+                if 'BMAJ' not in self.header:
+                    self.header.insert('History',
+                                       ('BMAJ', float(line.split()[3])))
+                if 'BMIN' not in self.header:
+                    self.header.insert('History',
+                                       ('BMIN', float(line.split()[5])))
+                if 'BPA' not in self.header:
+                    self.header.insert('History',
+                                       ('BPA', float(line.split()[7])))
 
     def __add_beam__(self, hdu):
-
-        # load the beam info into a special attribute
+        """Add the beam data attribute (different for CASA)."""
         if 'CASAMBM' in self.header:
             self.beam = {'BMAJ': hdu[1].data['BMAJ'],
                          'BMIN': hdu[1].data['BMIN'],
@@ -828,7 +1219,7 @@ class Qube(object):
                          'POL': np.zeros(nchan)}
 
     def __fix_beam__(self, channels=None):
-
+        """Fix the beam data attribute."""
         if channels is None:
             self.beam["BMAJ"] = np.mean(self.beam["BMAJ"])
             self.beam["BMIN"] = np.mean(self.beam["BMIN"])
@@ -842,68 +1233,11 @@ class Qube(object):
             self.beam["CHAN"] = self.beam["CHAN"][channels]
             self.beam["POL"] = self.beam["POL"][channels]
 
-    def __AIPSfix__(self):
-
-        # rename the rest frequency (if needed)
-        if 'RESTFREQ' in self.header and 'RESTFRQ' not in self.header:
-            self.header.rename_keyword('RESTFREQ', 'RESTFRQ')
-
-        # look for a line like this in the history to get beam information
-        # HISTORY AIPS   CLEAN BMAJ=  1.7599E-03 BMIN=  1.5740E-03
-        # BPA=   2.61
-
-        for line in self.header['History']:
-            if 'BMAJ' in line:
-                if 'BMAJ' not in self.header:
-                    self.header.insert('History',
-                                       ('BMAJ', float(line.split()[3])))
-                if 'BMIN' not in self.header:
-                    self.header.insert('History',
-                                       ('BMIN', float(line.split()[5])))
-                if 'BPA' not in self.header:
-                    self.header.insert('History',
-                                       ('BPA', float(line.split()[7])))
-
-
-    def __GILDASfix__(self):
-
-        # rename the rest frequency (if needed)
-        if 'RESTFREQ' in self.header and 'RESTFRQ' not in self.header:
-            self.header.rename_keyword('RESTFREQ', 'RESTFRQ')
-        # add cunit3 keyword
-        if 'CUNIT3' not in self.header:
-            self.header['CUNIT3'] = 'm/s'
-
-    def __KCWIfix__(self):
-
-        # add RESTFRQ keyword to the header
-        restfreq = const.c .value / (self.header['RESTWAV'] * 1E-10)
-        self.header.set('RESTFRQ', restfreq)
-
-        #  add CDELT3 keyword and convert values to frequency
-        cdelt3 = self.header['CD3_3']
-        self.header.set('CDELT3', cdelt3)
-
-        # add some 'fake' beam parameters these should be first
-        # updated to the seeing values of the data.
-        self.header.set('BMAJ', 1.0 / 3600.)
-        self.header.set('BMIN', 1.0 / 3600.)
-        self.header.set('BPA',  0.0)
-
-    def __get_velocitywidth__(self, **kwargs):
-
-        """ small function that will get the velocities and calculate the
-        median distance between them (i.e., width of the velocity channel).
-        """
-
-        VelArr = self._getvelocity_(**kwargs)
-        return np.median(np.abs(VelArr - np.roll(VelArr, 1)))
-
 
 # some auxilliary functions not directly part of the Qube class
 def __fit_gaussian__(data, doguess=True, gausspar=None, bins=None,
                      ax=None, channel=0):
-
+    """Fit a Gaussian to a data distribution."""
     # parse only the finite data
     data = data[np.isfinite(data)]
 
@@ -939,7 +1273,7 @@ def __fit_gaussian__(data, doguess=True, gausspar=None, bins=None,
 
 
 def __make_sigplot__(sigma, xval, hist, g, bins, ax, channel):
-
+    """Make a histogram plot of the Gaussian fit."""
     ax.plot(xval, hist, 'o')
     ax.plot(xval, g(xval), label='Gaussian')
     if np.isfinite(np.min(xval)+np.max(xval)):
@@ -952,7 +1286,13 @@ def __make_sigplot__(sigma, xval, hist, g, bins, ax, channel):
 
 
 def __correct_flux__(flux, vel, limits):
+    """
+    Correct the flux for continuum wiggles.
 
+    This will fit the spectrum for a potential continuum residual or
+    wiggles. The fitting function of the continuum is a second order
+    polynomial. The fit will ignore the region within the limits.
+    """
     # fit the spectrum for potential continuum residual
     # (second order polynomial)
 

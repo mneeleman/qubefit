@@ -1,4 +1,10 @@
-"""The main class for the qubefit program."""
+"""
+Main class for the qubefit fitting program.
+
+This class is based on the qube class and inherits all of its functions. The
+additional functions defined here are to define a model, run the fitting
+routine and analyze the results.
+"""
 import numpy as np
 from scipy.special import erf
 import emcee
@@ -13,21 +19,51 @@ import h5py
 
 
 class QubeFit(Qube):
+    """
+    Initiate the Qubefit class.
+
+    Class that is used for fitting data cubes. This class is based on the
+    Qube class and inherits all of its functions. The additional functions
+    defined here are to define a model, run the fitting routine and analyze
+    the results.
+
+    When it is initiated, the following data attributes are defined and
+    can be explcitely set: modelname, probmethod, intensityprofile,
+    velocity profile, and dispersionprofile.
+
+    Parameters
+    ----------
+        modelname : STRING, optional
+            The name of the model used for the fitting. The default is
+            'ThinDisk'.
+        probmethod : STRING, optional
+            The name of the probability function to use. The default is
+            'ChiSq'.
+        intensityprofile : LIST, optional
+            List of three strings with the names of the profiles to use for
+            the intesity of the model. The three strings correspond to the
+            three dimensions used to describe the model. For a cylindrical
+            coordinate system this is r, phi and z in that order.
+            The default is ['Exponential', None, 'Exponential'].
+        velocityprofile : LIST, optional
+            List of three strings with the names of the profiles to use for
+            the velocity of the model. The three strings correspond to the
+            three dimensions used to describe the model. For a cylindrical
+            coordinate system this is r, phi and z in that order.
+            The default is ['Constant', None, None].
+        dispersionprofile : TYPE, optional
+            List of three strings with the names of the profiles to use for
+            the disperdsion of the model. The three strings correspond to the
+            three dimensions used to describe the model. For a cylindrical
+            coordinate system this is r, phi and z in that order.
+            The default is ['Constant', None, None].
+    """
 
     def __init__(self, modelname='ThinDisk', probmethod='ChiSq',
                  intensityprofile=['Exponential', None, 'Exponential'],
                  velocityprofile=['Constant', None, None],
                  dispersionprofile=['Constant', None, None]):
-
-        """ initiate with the characteristics of the wanted model. Current
-        choices are:
-        modelname: 'ThinDisk'
-        radialprofile: 'Exponential'
-        heightprofile: 'Delta'
-        velocityprofile: 'Constant'
-        dispersionprofile: 'Constant'
-        """
-
+        """Initiate the qubefit class."""
         self.modelname = modelname
         self.intensityprofile = intensityprofile
         self.velocityprofile = velocityprofile
@@ -36,21 +72,63 @@ class QubeFit(Qube):
 
     def create_gaussiankernel(self, channels=None, LSFSigma=None,
                               kernelsize=4):
+        """
+        Create a Gaussian kernel.
 
-        """ This function will generate a Gaussian kernel from the data
+        This method will generate a Gaussian kernel from the data
         stored in the Qube. It will look for the beam keyword and generate
         a gaussian kernel from the shape of the synthesized beam given here.
         Several different kernels can be returned.
-        1) A list of 3D kernels -one for each spectral bin- that
-        takes into account both a (varying) LSF and a (varying) PSF
+        1) A list of 3D kernels -one for each spectral channel- that
+        takes into account both a varying LSF and a varying PSF
+        (set this by selecting a range of channels and LSFSigma)
         2) A list of 2D kernels -one for each spectral bin- that
         takes into account a varying PSF, but no LSF
+        (set this by selecting a range of channels and LSFSigma=None)
         3) A 3D kernel that has constant PSF and LSF
-        """
+        Only the last option is currently implemented in the code and should
+        therefore be used (i.e., specify a single channel not a list).
 
-        # quick check that the beam attribute has been defined
+        This method will populate the kernel and kernelarea data
+        attributes of the qubefit instance.
+
+        Parameters
+        ----------
+        channels : LIST, NUMPY.ARRAY or INT, optional
+            The channels to use to create the beam. If this is not specified,
+            then the center of the cube will be used. If multiple channels
+            are specified, then a list of kernels will be given, one for
+            each channel. This is useful when the kernel/PSF changes with the
+            channel. This option, however, is currently NOT implemented in
+            the code and therefore just a single channel should be specified.
+            The default is None.
+        LSFSigma : FLOAT or NUMPY.ARRAY, optional
+            The width of the line spread function. Note that this is the
+            sigma or square root of the variace, NOT the FWHM!. The unit for
+            this value is pixels. If this is not specfied, then the LSF is
+            assumed to be neglible, which is often ok for ALMA data, which has
+            been averaged over many channels.
+            The default is None.
+        kernelsize : FLOAT, optional
+            The size of the kernel in terms of the sigma of the major axis
+            in pixels (bsig). The actual size of the kernel will be a cube
+            that has a size for the two spatial dimensions: 2 (n * bsig) + 1,
+            where n is the kernelsize. The default is 4.
+
+        Raises
+        ------
+        AttributeError
+            Function will raise an attribute error if the beam has not been
+            propertly defined.
+
+        Returns
+        -------
+        None : NoneType
+        """
+        # Check that the beam attribute has been defined
         if not hasattr(self, 'beam'):
-            raise ValueError('Beam must be defined to create gaussian kernel')
+            raise AttributeError('Beam attribute must be defined to create' +
+                                 'gaussian kernel')
 
         # define some parameters for the beam
         Bmaj = (self.beam['BMAJ'] / np.sqrt(8 * np.log(2)) /
@@ -59,15 +137,19 @@ class QubeFit(Qube):
                 np.abs(self.header['CDELT1']))
         Bpa = self.beam['BPA']
         theta = np.pi / 2. + np.radians(Bpa)
+        KernelArea = Bmaj * Bmin * 2 * np.pi
 
         # Here decide which channel(s) to use for generating the kernel
         if channels is None:
-            channels = np.arange(len(Bmaj))
+            channels = [len(Bmaj) // 2]
+        if type(channels) is int:
+            channels = [channels]
 
         # create an array of LSFSigma (if needed)
         if LSFSigma is not None and type(LSFSigma) is float:
             LSFSigma = np.full(len(Bmaj), LSFSigma)
 
+        # create a (list of) 2D kernel(s)
         Kernel = ()
         for ii in channels:
             xsize = 2 * np.ceil(kernelsize*Bmaj[ii]) + 1
@@ -75,6 +157,7 @@ class QubeFit(Qube):
             TwoDKernel = Gaussian2DKernel(Bmaj[ii], Bmin[ii], theta=theta[ii],
                                           x_size=xsize, y_size=ysize).array
 
+        # apply the line-spread function (if wanted)
         if LSFSigma is None:
             Kernel = Kernel + (TwoDKernel,)
         else:
@@ -85,31 +168,56 @@ class QubeFit(Qube):
                                                        np.newaxis, ...])
             Kernel = Kernel+(ThreeDKernel,)
 
-        # now remove the list if it is just one element
+        # select the kernel areas
+        KernelArea = KernelArea[channels]
+
+        # if a single channel is given then remove the list and force the
+        # single kernel to be 3D.
         if len(Kernel) == 1:
             Kernel = Kernel[0]
+            KernelArea = KernelArea[0]
+            if Kernel.ndim == 2:
+                Kernel = np.array([Kernel, ])
 
-        # now assign this as an attribute to the Qube
+        # now assign the following attributes.
         self.kernel = Kernel
-
-        # also calculate the area of the kernel
-        kernelarea = Bmaj * Bmin * 2 * np.pi
-        if channels is not None:
-            kernelarea = kernelarea[channels]
-        if len(kernelarea) == 1:
-            kernelarea = kernelarea[0]
-        self.kernelarea = kernelarea
+        self.kernelarea = KernelArea
 
     def load_initialparameters(self, Parameters):
-
-        """ This function will load in the initial parameters from a
-        dictionary. The dictionary is transfered into a keyword, as well
-        as a parameter keyword that contains all of the needed parameters
-        for the model. Finally a parameter array is created of just values,
-        together with a mapping array and distribution lists all of which
-        are used in the MCMC process.
         """
+        Load the intial parameter dictionary into the qubefit instance.
 
+        This method will load in the initial parameters from a
+        dictionary. The dictionary is transfered into a data attribute,
+        in addition several other attributes are created which are needed
+        for the model and the MCMC fitting procedure.
+
+        This method will set the initpar, par, mcmcpar, mcmcmap,
+        priordist and mcmcdim data attributes. The initpar attribute is a
+        simple copy of the parameter dictionary. The par data attribute
+        contains the value of the parameters converted into intrinsic units.
+        mcmcpar and mcmcmap are the values and names of the parameters not
+        held fixed during the fitting procedure and mcmcdim are the number of
+        free parameters. Finally priordist is the prior distribution of each
+        parameter that is not held fixed (see scipy.stats).
+
+        Parameters
+        ----------
+        Parameters : DICT
+            The dictionary describes several important features for each
+            parameter of the model. A detailed description is given in the
+            online documentation. In general, it contains a 'Value' and 'Unit',
+            key, which are in physically interesting units.
+            A 'Conversion' to intrinsic units of the cube. A 'Fixed' key to
+            allow a parameter to be kept fixed, and finally a 'Dist' keyword,
+            which describes the priors of the parameters (using the keys:
+            'Dloc and 'Dscale').
+
+        Returns
+        -------
+        None : NoneType
+
+        """
         self.initpar = Parameters
         self.par = {}
         self.mcmcpar = []
@@ -138,10 +246,13 @@ class QubeFit(Qube):
         """
         Create the model cube with the given parameters and model.
 
-        This function will take the stored parameters (in self.par) and
+        This method will take the stored parameters (in self.par) and
         will generate the requested model. NOTE: currently no checking is
         done that the parameters are actually defined for the model that is
         requested. This will likely result in a rather benign AttributeError.
+
+        This method will set the model data attribute using the parameters
+        stored in the par data attribute and the model defined elsewhere.
 
         Parameters
         ----------
@@ -151,24 +262,22 @@ class QubeFit(Qube):
 
         Returns
         -------
-        None.
-
-        This function will create/modify the self.model array with the latest
-        model based on the parmeters in self.par.
-
+        None : NoneType
         """
         kwargs = self.__define_kwargs__()
         kwargs['convolve'] = convolve
         self.model = __create_model__(**kwargs)
 
-    def run_mcmc(self, nwalkers=50, nsteps=100, nproc=None, filename=None,
-                 return_sampler=False):
+    def run_mcmc(self, nwalkers=50, nsteps=100, nproc=None, init_frac=0.02,
+                 filename=None, return_sampler=False):
         """
         Run the MCMC process with emcee.
 
-        This is the heart of QubeFit. It will run an MCMC process on a
+        This method is the heart of QubeFit. It will run an MCMC process on a
         predefined model and will return the resulting chain of the posterior
-        PDFs of each individual parameter that was varied.
+        PDFs of each individual parameter that was varied. It saves the
+        results in the mcmcarray and mcmclnprob data attributes, but it is
+        HIGHLY RECOMMENDED to also save the outputs into a HDF5 file.
 
         Parameters
         ----------
@@ -181,6 +290,9 @@ class QubeFit(Qube):
             will determine the optimum number of processes to spawn. Set this
             number to limit to load of this code on your system.
             The default is None.
+        init_frac: FLOAT, optional
+            The fraction to use to randomize the initial distribution of
+            walker away from the chosen initial value. The default is 0.02.
         filename : STRING, optional
             If set, the chain will be saved into a file with this file name.
             The file format is HDF5, and if not directly specified, this
@@ -198,9 +310,9 @@ class QubeFit(Qube):
 
         Yields
         ------
-        sampler : emcee.EnsembleSampler
-            The ensemble sampler returned by the emcee function call.
-
+        sampler : EMCEE.ENSEMBLESAMPLER
+            The ensemble sampler returned by the emcee function call can be
+            returned, if wanted.
         """
         # load the hdf5 backend if filename is specified
         if filename is not None:
@@ -223,11 +335,9 @@ class QubeFit(Qube):
         # calculate the intial probability, if it is too small (i.e., 0) then
         # the code will exit with an error
         initprob = __lnprob__(self.mcmcpar, **kwargs)
-
         if np.isinf(initprob):
             raise ValueError('Initial parameters yield zero probability.' +
                              ' Please choose other initial parameters.')
-
         print('Intial probability is: {}'.format(initprob))
 
         # define the sampler
@@ -238,8 +348,8 @@ class QubeFit(Qube):
                                             backend=backend, kwargs=kwargs)
 
             # initiate the walkers
-            p0 = [(1 + 0.02 * np.random.rand(self.mcmcdim)) * self.mcmcpar
-                  for walker in range(nwalkers)]
+            p0 = [(1 + init_frac * np.random.rand(self.mcmcdim)) *
+                  self.mcmcpar for walker in range(nwalkers)]
 
             # run the mcmc chain
             sampler.run_mcmc(p0, nsteps, progress=True)
@@ -257,9 +367,15 @@ class QubeFit(Qube):
         """
         Get the results from the MCMC run either from file or memory.
 
-        Calling this function will generate a dictionary with the median
+        Calling this method will generate a dictionary with the median
         values, and 1, 2, 3  sigma ranges of the parameters. These have been
-        converted into their original units as given in the initial parameters.
+        converted into their original units using the conversions in the
+        the initial parameter attribute (initpar).
+
+        If not present, this method will populate the self.mcmcarray and
+        self.mcmclnprob attributes with the values in the file. It will
+        also populate the self.chainpar data attribute with a dictionary
+        with the median parameters, uncertainty and unit conversions.
 
         Parameters
         ----------
@@ -267,7 +383,8 @@ class QubeFit(Qube):
             The name of the HDF5 file to load. If the filename is set to None,
             the assumption is that the qubefit instance already has the
             MCMC chain and log probability loaded into their respective
-            instances. The default is None.
+            instances. If this is not the case, the code will exit with an
+            AttributeError. The default is None.
         burnin : FLOAT, optional
             The fraction of runs to discard at the start of the MCMC chain.
             This is necessary as the chain might not have converged in the
@@ -291,13 +408,7 @@ class QubeFit(Qube):
 
         Returns
         -------
-        None.
-
-        If not present, it will populate the self.mcmcarray and
-        self.mcmclnprob keys with the values in the file. It will populate
-        the self.chainpar key with a dictionary with the median
-        parameters, uncertainty and unit conversions.
-
+        None : NoneType
         """
         # if filename is given, then load the HDF5 file.
         if filename is not None:
@@ -313,7 +424,9 @@ class QubeFit(Qube):
                                      'mcmclnprob are not defined')
 
         # get the burnin value below which to ditch the data
-        burninvalue = int(np.ceil(self.mcmcarray.shape[1]*burnin))
+        burninvalue = int(np.ceil(self.mcmcarray.shape[0] * burnin))
+        self.mcmcarray = self.mcmcarray[burninvalue:, :, :]
+        self.mcmclnprob = self.mcmclnprob[burninvalue:, :]
 
         # sigma ranges
         perc = (1 / 2 + 1 / 2 * erf(np.arange(-3, 4, 1) / np.sqrt(2))) * 100
@@ -336,8 +449,7 @@ class QubeFit(Qube):
             # now calculate median, etc. only if it was not held fixed
             if not self.initpar[key]['Fixed']:
                 idx = self.mcmcmap.index(key)
-                Data = self.mcmcarray[:, burninvalue:, idx]
-                Values = np.percentile(Data, perc) * Unit
+                Values = np.percentile(self.mcmcarray[:, :, idx], perc) * Unit
                 MedArr.update({key: Values[3].value})
                 BestValue = self.mcmcarray[BestValIdx[0], BestValIdx[1],
                                            idx] * Unit
@@ -373,44 +485,59 @@ class QubeFit(Qube):
         """
         Update the parameters key with the given parameters.
 
+        This method is a simple wrapper to update one or multiple parameters
+        in the par data attribute. These parameters should be given in
+        intrinsic units.
+
         Parameters
         ----------
-        parameters : dictionary
+        parameters : DICT
             dictionary of parameters that will be read into the par keyword.
-            Note that all parameters in self.par need to be defined in this
-            dictionary.
 
         Returns
         -------
-        None.
-
-        Updates the self.par keyword with the new parameter values.
-
+        None : NoneType
         """
         for key in parameters.keys():
             self.par[key] = parameters[key]
 
     def calculate_chisquared(self, reduced=True, adjust_for_kernel=True):
-
-        """ this will calculate the (reduced) chi-squared statistic for
-        the given model, data and pre-defined mask.
-
-        keywords:
-        ---------
-        reduced (Bool|default: True):
-            Will calculate the reduced chi-squared statistic of the model
-
-        adjust_for_kernel: (Bool|default: True):
-            Will adjust the mask for the size of the kernel. This should be
-            set to False if the mask is set up to sparsely sample the data set,
-            which is the case in (most) bootstrap sampling techniques and with
-            sampling/regular masks.
         """
+        Calcuate the (reduced) chi-squared statistic.
 
+        This method will calculate the (reduced) chi-squared statistic for
+        the given model, data and pre-defined mask. The value can be adjusted
+        for the oversampling of the beam using a simplified assumption, which
+        is described in detail in the reference paper.
+
+        Parameters
+        ----------
+        reduced : BOOLEAN, optional
+            If set, this will calculate the reduced chi-square statistic, by
+            dividing by the degrees of freedom and optionally by the
+            adjustment factor to account for the oversampled beam.
+            The default is True.
+        adjust_for_kernel : BOOLEAN, optional
+            If set, it will apply an adjustement factor to the reduced
+            chi-suared statistic to account for oversampling the beam. If the
+            mask is only sparsely sampled, this adjustment factor should be
+            set to False. The default is True.
+
+        Raises
+        ------
+        AttributeError
+            This method will return an AttributeError if no mask has yet been
+            defined.
+
+        Returns
+        -------
+        chisq : FLOAT
+            The (reduced) chi-square statistic of the model within the mask.
+        """
         # generate a bootstraparray (if needed)
         if not hasattr(self, 'maskarray'):
-            raise ValueError('Need to define a mask for calculating the' +
-                             'likelihood function')
+            raise AttributeError('Need to define a mask for calculating the' +
+                                 'likelihood function')
 
         # get the residual and variance
         residual = self.data - self.model
@@ -435,8 +562,7 @@ class QubeFit(Qube):
         return chisq
 
     def create_maskarray(self, sampling=2., bootstrapsamples=200,
-                         mask=None, regular=None, sigma=None, nblobs=1,
-                         fmaskgrow=0.01):
+                         regular=None, sigma=None, nblobs=1, fmaskgrow=0.01):
         """
         Generate the mask for fitting.
 
@@ -451,45 +577,50 @@ class QubeFit(Qube):
         or ChiSquared value of the given data point, while the second is used
         for the bootstrap method of both functions.
 
-        Several mask options can be specified.
+        Several mask options can be specified. It should be noted that these
+        masks are muliplicative. This method will set the maskarrray data
+        attribute.
 
         Parameters
         ----------
-        sampling (float|default: 2.):
-            The number of samples to choose per beam/kernel area
+        sampling : FLOAT, optional
+            The number of samples to choose per beam/kernel area. This keyword
+            is only needed for the sparse sampling methods and for bootstrap
+            arrays. The default is 2.
 
-        bootstrapsamples (int|default: 200):
-            The number of bootstrap samples to generate.
+        bootstrapsamples : INT, optional
+            The number of bootstrap samples to generate. This keyword is only
+            needed if the probability method is set to 'BootKS' or
+            'BootChiSq'. The default is 200.
 
-        mask (np.array|default: None):
-            If specified it will take this mask as the mask array,
-            while setting the method that is used with this mask.
-            The mask should have 0 (False) where not wanted and 1(True)
-            if wanted.
-
-        regular(tuple|default: None):
+        regular : TUPLE, optional
             If a two element tuple is given, then a regular grid will be
             generated that is specified by the number of samplings per
-            kernelarea which will go through the given tuple.
+            kernelarea which will go through the given tuple. The default is
+            None.
 
-        sigma(float|default: None):
+        sigma : FLOAT, optional
             If given, a mask is created that will just consider values above
             the specified sigma (based on the calculated variance). Only the
             n largest blobs will be considered (specified optionally by
-            nblobs). It will grow this mask by convolving with the kernel
+            nblob). It will grow this mask by convolving with the kernel
             to include also adjacent 'zero' values.
 
-        nblobs(int|default: 1):
-            number of blobs to consider in the sigma-mask method
+        nblobs : INT, optional
+            The number of blobs to consider in the sigma-mask method. The
+            blobs are ordered in size, where the largest blob which is the
+            background is ignored. If set to 1, this will select only the
+            largest non-background blob. The default is 1.
 
-        fmaskgrow (float|default: 0.1):
-            fraction of the peak value which marks the limit of where to cut
-            of the growth factor. If set to 1, the mask is not grown.
+        fmaskgrow : FLOAT, optional
+            The fraction of the peak value which marks the limit of where to
+            cut of the growth factor. If set to 1, the mask is not grown.
+            This value allows to include some adjacent zero values to be
+            included.
 
         Returns
         -------
-        sets the following keys:
-            self.maskarray
+        None : NoneType
         """
         method = self.probmethod
 
@@ -507,9 +638,6 @@ class QubeFit(Qube):
             # masks are cumulative / multiplicative
             self.maskarray = np.ones_like(self.data)
 
-            if mask is not None:
-                self.maskarray *= mask
-
             if regular is not None:
                 self.maskarray *= __get_regulargrid__(self.data.shape,
                                                       self.kernelarea,
@@ -526,11 +654,12 @@ class QubeFit(Qube):
                              '{}'.format(method))
 
     def __calculate_loglikelihood__(self):
+        """
+        Calculate the log likelihood.
 
-        """ wrapper function to calculate the log likelihood of the model over
+        wrapper function to calculate the log likelihood of the model over
         the given mask and the defined likelihood/probability method.
         """
-
         # generate a mask array (if not defined)
         if not hasattr(self, 'maskarray'):
             raise ValueError('Need to define a mask for calculating the' +
@@ -545,13 +674,14 @@ class QubeFit(Qube):
         return lnlike
 
     def __define_kwargs__(self):
+        """
+        Define the kwargs dictionary.
 
-        """ This will generate a simple dictionary of all of the needed
+        This will generate a simple dictionary of all of the needed
         information to create a model, and run the emcee process. This
         extra step is necessary because the multithreading capability of
         emcee cannot handle the original structure.
         """
-
         mkeys = ['modelname', 'intensityprofile',
                  'velocityprofile', 'dispersionprofile']
 
@@ -576,14 +706,19 @@ class QubeFit(Qube):
 
 
 def __lnprob__(parameters, **kwargs):
+    """
+    Calculate the log probability of the data and model.
 
-    """ This will calculate the log-probability of the model compared
+    This will calculate the log-probability of the model compared
     to the data. It will either use the ks-test approach to calculate the
     probability that the residual is consistent with a Gaussian (if a
     single variance is given in self.variance) or a chi-squared probability
     is calculated (if self.variance is an array the size of the data).
-    """
 
+    NOTE: Currently the prior distributions are not multiplied through instead
+    they are taken as either -inf or 1. This is ok for uninformed priors but
+    NOT correct for other priors.
+    """
     # log of the priors
     lnprior = __get_priorlnprob__(parameters, **kwargs)
 
@@ -606,11 +741,12 @@ def __lnprob__(parameters, **kwargs):
 
 
 def __get_priorlnprob__(parameters, **kwargs):
+    """
+    Calculate the prior log probability.
 
-    """ Calculate prior probability distribution function based on the
+    Calculate prior probability distribution function based on the
     distribution defined for each parameter.
     """
-
     lnprior = []
     for parameter, key in zip(parameters, kwargs['mcmcmap']):
         if kwargs['initpar'][key]['Conversion'] is not None:
@@ -631,13 +767,17 @@ def __get_priorlnprob__(parameters, **kwargs):
 
 
 def __get_lnprob__(residual, **kwargs):
+    """
+    Calculate the probability of the model (not including priors).
 
-    """ This function will calculate the probability for the residual. Several
-    approaches can be defined using the kwargs['ProbMethod']. This keyword is
-    set when the mask array is specified (see self.create_maskarray).
+    This function will calculate the probability for the residual. Several
+    approaches can be defined using the kwargs['ProbMethod']. The most stable
+    and recommended approach is the standard chi-squared. One can also try
+    the bootstrap methods, which have been stested less, but appear to work
+    decent.
 
-    'Chi-Squared' likelihood function is calculated using the approach:
-    ChiSquared = np.sum(np.square(data - model) / variance +
+    'ChiSq' likelihood function is calculated using the approach:
+    ChiSquared = np.sum(np.square(residual) / variance +
                         np.log(2 * pi * variance))
     Here the second part is really not necessary as it is a constant term and
     the log likelihood is insensitive to constant additive factors. We assume
@@ -648,12 +788,7 @@ def __get_lnprob__(residual, **kwargs):
     by this to get the log likelihood funtion:
 
     -0.5 * ChiSquared / Nyquist, where Nyquist = kernelarea / (4 / ln(2))
-
-    NOTE: Currently the prior distributions are not multiplied through instead
-    they are taken as either -inf or 1. This is ok for uninformed priors but
-    NOT correct for other priors.
     """
-
     # the bootstrap methods
     Boot = (kwargs['probmethod'] == 'BootKS' or
             kwargs['probmethod'] == 'BootChiSq')
@@ -710,23 +845,26 @@ def __get_lnprob__(residual, **kwargs):
 
 
 def __update_parameters__(parameters, **kwargs):
+    """
+    Update the parameters in the kwargs dictionary.
 
-    """ This will update the parameters with the values from the MCMC
+    This will update the parameters with the values from the MCMC
     chain parameters. This should be the first call during running of the
-    MCMC chain when the probability is calculated
+    MCMC chain when the probability is calculated.
     """
     for parameter, key in zip(parameters, kwargs['mcmcmap']):
         kwargs['par'][key] = parameter
 
 
 def __create_model__(**kwargs):
-
-    """ This function will take the stored parameters (args) and
-    will generate the requested model. NOTE: currently no checking is
-    done that the parameters are actually defined for the model that is
-    requested. This will likely result in a rather benign AttributeError.
     """
+    Create the model from the parameters.
 
+    This function will take the stored kwargs and will generate the
+    model. NOTE: currently no checking is done that the parameters are
+    actually defined for the model that is requested. This will likely
+    result in a rather benign AttributeError.
+    """
     modeln = kwargs['mstring']['modelname']
     model = eval(modeln)(**kwargs)
 
@@ -734,12 +872,13 @@ def __create_model__(**kwargs):
 
 
 def __get_regulargrid__(shape, kernelarea, sampling, center):
-
-    """ Creates a regular grid of values for the given array shape. Such that
-    there are approximately n samplings per kernelarea, where n is given by
-    the sampling parameter.
     """
+    Create a regular grid through tuple 'center'.
 
+    Creates a regular grid of values for the given array shape. Such that
+    there are approximately n samplings per kernelarea, where n is given by
+    the sampling parameter. The array will be sampled at center.
+    """
     # approximate scalelength for the points in pixels
     r = np.sqrt(kernelarea * 4 * np.log(2) / np.pi) / sampling
 
@@ -763,10 +902,13 @@ def __get_regulargrid__(shape, kernelarea, sampling, center):
 
 
 def __get_sigmamask__(data, variance, kernel, sigma, nblobs, fmaskgrow):
-
-    """ Creates a mask based on the variance of the cube
     """
+    Create a mask based on the variance of the cube.
 
+    The mask will be cut above the given sigma level. After this only the
+    n - largest blobs will be considered. Finally the mask can be grown to
+    include some buffer of values below the sigma cutoff.
+    """
     # create the blobs and sort them
     lab = measure.label(data > sigma * np.sqrt(variance))
     bins = np.bincount(lab.flatten())
