@@ -11,10 +11,15 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import sphinx_rtd_theme
-# import os
-# import sys
-# sys.path.insert(0, os.path.abspath('.'))
+import os
+import sys
+sys.path.insert(0, os.path.abspath('.'))
+from pkg_resources import DistributionNotFound, get_distribution
 
+try:
+    __version__ = get_distribution("qubefit").version
+except DistributionNotFound:
+    __version__ = "unknown version"
 
 # -- Project information -----------------------------------------------------
 
@@ -23,7 +28,8 @@ copyright = '2020-2021, Marcel Neeleman'
 author = 'Marcel Neeleman'
 
 # The full version, including alpha/beta/rc tags
-release = 'V1.0'
+release = __version__
+version = __version__
 
 
 # -- General configuration ---------------------------------------------------
@@ -47,13 +53,18 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 source_suffix = ".rst"
-# master_doc = "index"
+master_doc = "index"
 
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
+on_rtd = os.environ.get("READTHEDOCS", None) == "True"
+if not on_rtd:
+    import sphinx_rtd_theme
+    html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
+
 html_theme = 'sphinx_rtd_theme'
 
 # html_sidebars = {

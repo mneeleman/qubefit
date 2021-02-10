@@ -1,0 +1,7 @@
+__uri__ = "https://qubefit.readthedocs.io"
+__url__ = "https://github.com/mneeleman/qubefit"
+__author__ = "Marcel Neeleman"
+__email__ = "neeleman@mpia.de"
+__license__ = "MIT"
+__description__ = "Kinematic fitting of data cubes."
+__version__ = "v1.0.0"

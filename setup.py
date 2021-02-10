@@ -1,6 +1,19 @@
 #!/usr/bin/env python
-# Licensed under a 3-clause BSD style license - see LICENSE.rst
-from __future__ import absolute_import, division, print_function
+# from __future__ import absolute_import, division, print_function
+#
+# Find the version
+#
+import re
+def get_version():
+
+    version_file = './qubefit/__init__.py'
+    ver = 'unknown'
+    with open(version_file, "r") as f:
+        for line in f.readlines():
+            mo = re.match('__version__ = "(.*)"', line)
+            if mo:
+                ver = mo.group(1)
+    return ver
 #
 # Standard imports
 #
@@ -12,10 +25,6 @@ from distutils.extension import Extension
 #from distutils.command.sdist import sdist as DistutilsSdist
 from setuptools import setup, find_packages
 #
-# DESI support code.
-#
-#from desiutil.setup import DesiTest, DesiVersion, get_version
-#
 # Begin setup
 #
 setup_keywords = dict()
@@ -25,13 +34,13 @@ setup_keywords = dict()
 setup_keywords['name'] = 'qubefit'
 setup_keywords['description'] = 'Qubefit Software'
 setup_keywords['author'] = 'Marcel Neeleman'
-#setup_keywords['author_email'] = 'xavier@ucolick.org'
-setup_keywords['license'] = 'BSD'
+setup_keywords['author_email'] = 'neeleman@mpia.de'
+setup_keywords['license'] = 'MIT'
 setup_keywords['url'] = 'https://github.com/mneeleman/qubefit'
 #
 # END OF SETTINGS THAT NEED TO BE CHANGED.
 #
-setup_keywords['version'] = '0.1.dev0' #get_version(setup_keywords['name'])
+setup_keywords['version'] = get_version()
 #
 # Use README.rst as long_description.
 #
@@ -77,11 +86,12 @@ setup_keywords['package_data'] = {'qubefit': data_files,
 setup_keywords['include_package_data'] = True
 
 #
-# trial adding script
+# adding scripts
 #
 
 entry_points = {}
-entry_points['console_scripts'] = ['qfgui = qubefit.scripts.qfgui:main']
+entry_points['console_scripts'] = ['qfgui = qubefit.scripts.qfgui:main',
+                                   'qubemom = qubefit.scripts.qubemom:main']
 setup_keywords['entry_points'] = entry_points
 #
 # Run setup command.
