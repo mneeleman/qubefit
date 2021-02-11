@@ -12,4 +12,8 @@ Qubefit uses a fully Bayesian framework to explore the multi-dimension parameter
 
 Within the code, there are several convenience functions defined to assess the results of the fitting routine, as well as to assess the kinematics of the data, such as moment images and positon-velocity diagrams. Full documentation for the use of the code, including some tutorials are located in the [documentation](https://qubefit.readthedocs.io/en/latest "Documentation for Qubefit").
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4534407.svg)](https://doi.org/10.5281/zenodo.4534407)
+
+[![Documentation Status](https://readthedocs.org/projects/qubefit/badge/?version=latest)](https://qubefit.readthedocs.io/en/latest/?badge=latest)
+
 MIT License, Copyright (c) 2020-2021 Marcel Neeleman
