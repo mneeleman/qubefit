@@ -15,7 +15,4 @@ python:
    version: 3.8
    install:
    - requirements: doc/requirements.txt
-
-# packages
-packages:
-  method: setuptools
+   - method: setuptools
