@@ -189,9 +189,10 @@ def standardfig(raster=None, contour=None, newplot=False, ax=None, fig=None,
                 vscale = (vrange[1] - vrange[0]) / 5.
 
             if cbaraxis is not None:
-                cbr = cbaraxis.colorbar(im, ticks=np.arange(-10, 10) * vscale)
+                cbr = plt.colorbar(im, ticks=np.arange(-10, 10) * vscale,
+                                   cax=cbaraxis)
             else:
-                cbr = fig.colorbar(im, ticks=np.arange(-10, 10) * vscale,
+                cbr = plt.colorbar(im, ticks=np.arange(-10, 10) * vscale,
                                    ax=ax)
             # label of color bar
             if cbarlabel is not None:
