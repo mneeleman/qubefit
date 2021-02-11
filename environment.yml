@@ -8,9 +8,8 @@ dependencies:
 - h5py
 - scikit-image
 - tqdm
+- jupyterlab
 - pip
 - pip:
-  - jupyterlab
   - emcee
   - corner
-  

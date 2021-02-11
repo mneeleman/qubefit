@@ -1,3 +1,5 @@
 jupyter
 numpy
+astropy
+scipy
 
