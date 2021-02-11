@@ -1,5 +1,3 @@
-.. module:: qubefit
-
 .. _qube:
 
 Qube
