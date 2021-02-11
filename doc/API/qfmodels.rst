@@ -1,3 +1,5 @@
+.. module:: qubefit
+
 .. _qfmodels:
 
 Qfmodels
