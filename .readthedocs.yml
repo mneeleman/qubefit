@@ -10,7 +10,7 @@ sphinx:
 formats:
    - pdf
 
-3 python
+# python
 python:
    version: 3.8
    install:
