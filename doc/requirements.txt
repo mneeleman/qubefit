@@ -1,5 +1,11 @@
-jupyter
+jupyterlab
 numpy
 astropy
 scipy
+matplotlib
+h5py
+scikit-image
+tqdm
+emcee
+corner
 
