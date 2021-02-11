@@ -48,7 +48,7 @@ Documentation
    :caption: Tutorials:
 
    Tutorials/ThinDisk.ipynb
-   Tutorials/Moments
+   Tutorials/Moments.ipynb
 
 .. toctree::
    :maxdepth: 1
