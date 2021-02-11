@@ -47,8 +47,8 @@ Documentation
    :maxdepth: 1
    :caption: Tutorials:
 
-   Tutorials/ThinDisk.rst
-   Tutorials/Moments.rst
+   Tutorials/ThinDisk
+   Tutorials/Moments
 
 .. toctree::
    :maxdepth: 1

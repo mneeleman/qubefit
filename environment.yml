@@ -1,0 +1,16 @@
+name: qubefit
+dependencies:
+- python=3.8
+- numpy
+- scipy
+- astropy
+- matplotlib
+- h5py
+- scikit-image
+- tqdm
+- pip
+- pip:
+  - jupyterlab
+  - emcee
+  - corner
+  
