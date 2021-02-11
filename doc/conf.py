@@ -13,6 +13,8 @@
 import sphinx_rtd_theme
 import os
 import sys
+import glob
+import subprocess
 sys.path.insert(0, os.path.abspath('.'))
 from pkg_resources import DistributionNotFound, get_distribution
 
@@ -38,8 +40,6 @@ version = __version__
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    'sphinx_rtd_theme',
-    'nbsphinx',
     'sphinx.ext.imgmath',
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon"
@@ -54,6 +54,18 @@ templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 source_suffix = ".rst"
 master_doc = "index"
+
+# Convert the tutorials
+for fn in glob.glob("_static/*.ipynb"):
+    name = os.path.splitext(os.path.split(fn)[1])[0]
+    outfn = os.path.join("Tutorials", name + ".rst")
+    print("Building {0}...".format(name))
+    subprocess.check_call(
+        "jupyter nbconvert --to rst "
+        + fn
+        + " --output-dir tutorials",
+        shell=True,
+    )
 
 # -- Options for HTML output -------------------------------------------------
 
