@@ -21,7 +21,7 @@ Here the functional forms that can be chosen for the profiles are defined in the
 
 Most profiles are determined by a single scale factor (either *R*:subscript:`d` or  *R*:subscript:`v` for radial profiles), except for the power and Sérsic profiles, which require an additional parameter. The profiles are scaled using a scaling factor, which is either *I*:subscript:`0`, *V*:subscript:`max`, or *σ*:subscript:`v` depending on which profile.
 
-These profiles need to be transformed into the frame of the sky (the primed frame). In theory, we could do this through matrix rotations. However in practice this produces incorrect results, because the disk is infinitely thin and most of the emission will fall between the grid after rotation, and correctly distributing the flux onto the regular grid is difficult. Fortunately, the infinitely thin disk has easy-to-calculate transformations. Following the work in Chen et al. 2005 ``link this``:
+These profiles need to be transformed into the frame of the sky (the primed frame). In theory, we could do this through matrix rotations. However in practice this produces incorrect results, because the disk is infinitely thin and most of the emission will fall between the grid after rotation, and correctly distributing the flux onto the regular grid is difficult. Fortunately, the infinitely thin disk has easy-to-calculate transformations. Following the work in `Chen et al. 2005 <https://arxiv.org/abs/astro-ph/0411006>`_:
 
 .. math:: 
 

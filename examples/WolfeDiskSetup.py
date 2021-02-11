@@ -6,7 +6,7 @@ from qubefit.qubefit import QubeFit
 def set_model():
 
     # Initialize the QubeFit Instance
-    DataFile = './WolfeDiskCube50.fits'
+    DataFile = './WolfeDiskCube.fits'
     Qube = QubeFit.from_fits(DataFile)
     Qube.file = DataFile
 

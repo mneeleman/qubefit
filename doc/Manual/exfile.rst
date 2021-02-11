@@ -2,7 +2,7 @@
 
 Example Setup File
 ===============================================
-To successfully run the fitting routine, you have to initialize a :ref:`qubefit` instance and populate all of the information within this instance. In theory this can be done line-by-line interactively, but in practice it is much easier to create a setup file to do this. The setup file we use is the ThinDiskSetup.py ``(link this)``. Here we will go line-by-line to explain each of the lines in this setup file. It is important to note that some of these lines of code might not be needed for your data or model, or you might need to add some additional information for the code to run successful. However, this example file is probably a good starting point for the setup file for your project.
+To successfully run the fitting routine, you have to initialize a :ref:`qubefit` instance and populate all of the information within this instance. In theory this can be done line-by-line interactively, but in practice it is much easier to create a setup file to do this. The setup file we use is the `WolfeDiskSetup.py <https://github.com/mneeleman/qubefit/blob/master/examples/WolfeDiskSetup.py>`_. Here we will go line-by-line to explain each of the lines in this setup file. It is important to note that some of these lines of code might not be needed for your data or model, or you might need to add some additional information for the code to run successful. However, this example file is probably a good starting point for the setup file for your project.
 
 Structure
 -------------------
@@ -26,7 +26,7 @@ Loading the Data
    Qube = QubeFit.from_fits(DataFile)
    Qube.file = DataFile
 
-In these lines the `data` and `header` keys are set using the task `from_fits` ``(link this)``. The final line sets the `file` key in the :ref:`qubefit` instance. This line is only used to assign a title to the GUI window.
+In these lines the `data` and `header` keys are set using the task `from_fits`. The final line sets the `file` key in the :ref:`qubefit` instance. This line is only used to assign a title to the GUI window.
 
 .. note::
    Depending on the header in the fits file, the rest frequency of the line might need to be (re)set here, i.e., Qube.header['restfrq'] = freq_in_Hz, where freq_in_Hz is the value of the redshifted frequency of the line.

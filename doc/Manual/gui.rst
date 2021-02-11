@@ -31,4 +31,4 @@ The Qube Moment GUI (qubemom)
 ----------------------------------------------------------
 The aim of *qubemom* is to provide a quick view of a data cube, and perform some simple kinematic operations such as determining the velocity field and dispersion field. Two methods can be used to calculate these fields, either the first and second moments of the data cube in the spectral direction or through Gaussian fitting of the spectrum at each pixel (see appendix C of the ``reference paper``). For the first method a mask is often defined, in order to only count those pixels detected above a certain noise threshold. For the second method, beware that Gaussian fitting is slow, and you likely will have to wait a few minutes.
 
-The *qubemom* GUI is currently under active development, and should appear in the code shortly. 
+The *qubemom* GUI is currently under active development, and will continue to change in the near-future.

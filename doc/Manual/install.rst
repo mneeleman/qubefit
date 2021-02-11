@@ -12,12 +12,15 @@ terminal window, navigate to the directory where the code lives, which contains 
   python setup.py install
   
 If everything goes correctly, this installs the code. To test if the installation was
-successful, see if the GUI loads. Inside the main folder type::
+successful, see if the GUI loads. Use the command line to put yourself Inside the examples folder ``qubefit/examples`` and then type::
 
-  qfgui tests/testmodel.py
+  qubemom WolfeDiskCube.fits
 
-If this brings up a GUI with two windows such as shown in the section
-on :ref:`guis`, the code was installed correctly.
+and ::
+
+    qfgui WolfeDiskSetup.py
+
+If this brings up the two GUIs such as shown in the section :ref:`guis`, the code was installed correctly.
 
 Dependencies
 ------------
