@@ -1097,6 +1097,9 @@ class Qube(object):
         inst_red = {'ALMA': self.__ALMA__, 'EVLA': self.__EVLA__,
                     'Hale5m': self.__PCWI__, 'Keck II': self.__KCWI__,
                     'NOEMA': self.__NOEMA__, 'ESO-VLT-U4': self.__MUSE__}
+
+        if 'INSTRUME' in self.header and 'TELESCOP' not in self.header:
+            self.header['TELESCOP'] = self.header['INSTRUME']
         inst_red[self.header['TELESCOP']]()
 
     def __ALMA__(self):
