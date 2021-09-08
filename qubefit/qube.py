@@ -674,7 +674,7 @@ class Qube(object):
 
         # sum up the pixels in each channel
         if data.ndim == 2:
-            spec = np.nansum(self.data)
+            spec = np.nansum(data)
         if data.ndim == 3:
             spec = np.nansum(np.nansum(data, axis=1), axis=1)
 
@@ -704,7 +704,7 @@ class Qube(object):
         return spec, vel
 
     def pvdiagram(self, PA, center, width=3., vshift=0.0, scale=1.,
-                  use_model=True, **kwargs):
+                  use_model=False, **kwargs):
         """
         Create the PV diagram along the given line.
 
@@ -806,8 +806,8 @@ class Qube(object):
                   (pixposition[np.size(pixposition) - 1] + 0.5) * scale,
                   velocity[0] - dv, velocity[np.size(velocity) - 1] + dv)
 
-        return {'pvdata': pvarray, 'extent': extent, 'position': position,
-                'velocity': velocity}
+        return dict({'pvdata': pvarray, 'extent': extent, 'position': position,
+                     'velocity': velocity})
 
     def to_fits(self, fitsfile='./cube.fits'):
         """
@@ -831,9 +831,9 @@ class Qube(object):
         # continuum image or moment image), then store the beam in the
         # primary header and remove the CASAMBM
         if self.beam['BMAJ'].size == 1:
-            self.header['BMAJ'] = self.beam['BMAJ']
-            self.header['BMIN'] = self.beam['BMIN']
-            self.header['BPA'] = self.beam['BPA']
+            self.header['BMAJ'] = self.beam['BMAJ'][0]
+            self.header['BMIN'] = self.beam['BMIN'][0]
+            self.header['BPA'] = self.beam['BPA'][0]
             self.header.remove('CASAMBM', ignore_missing=True)
             Fit = fits.PrimaryHDU(self.data, header=self.header)
             Fit.writeto(fitsfile, overwrite=True)

@@ -1,5 +1,6 @@
 # first attempts in creating a GUI
 import sys
+import os
 from matplotlib.backends.qt_compat import QtWidgets
 from matplotlib.backends.qt_compat import QtCore
 from matplotlib.figure import Figure
@@ -22,6 +23,7 @@ class ApplicationWindow(QtWidgets.QWidget):
         self.initUI()
 
     def initQube(self, modelfile, *args):
+        sys.path.append(os.getcwd())
         Model = importlib.import_module(modelfile)
         self.qube = Model.set_model(*args)
         if not hasattr(self.qube, 'file'):

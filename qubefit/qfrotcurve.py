@@ -107,7 +107,7 @@ def velocity_profile(qube, PA, Incl, Center, vshift=0, scale=1.,
     RPrime = scale * Rpix
 
     # create the velocity cube to calculate the rotation value
-    Vcube = np.tile(qube._getvelocity_()[:, np.newaxis, np.newaxis] - vshift,
+    Vcube = np.tile(qube.get_velocity()[:, np.newaxis, np.newaxis] - vshift,
                     (1, qube.shape[-2], qube.shape[-1]))
     Vsqrt = np.sqrt(1 + np.sin(Phi - PA)**2 * np.tan(Incl)**2)
     Vmax = Vcube / (np.cos(Phi - PA) * np.sin(Incl)) * Vsqrt
