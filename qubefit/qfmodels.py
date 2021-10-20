@@ -945,20 +945,18 @@ def __sudophi_array__(**kwargs):
 def __getarray__(profile=None, cprime=(None, None, None),
                  scale=(None, None, None), sidx=(None, None, None),
                  separable=True, **kwargs):
-
-
+    array = CartesianRepresentation(np.array([]), unit=u.pix)
     if separable:
         for idx, cp in enumerate(cprime):
             if cp is not None:
                 if scale[idx] is None:
-                    raise ValueError('__getintensityarray__: Set the scale ' +
+                    raise ValueError('__getarray__: Set the scale ' +
                                      'for coordinate index-{}'.format(idx))
                 tArray = (eval('_' + profile[idx] + '_')
                           (cp, scale[idx], sidx[idx]))
-                Array *= tArray
+                array *= tArray
     else:
-        Array = []
-        raise NotImplementedError('__getintensityarray__: Non separable ' +
+        raise NotImplementedError('__getarray__: Non separable ' +
                                   'profiles have not been implemented')
 
-    return Array
+    return array
