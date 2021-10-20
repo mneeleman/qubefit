@@ -75,42 +75,33 @@ def ThinDisk(**kwargs):
     RPrime, PhiPrime, R, Phi = __get_coordinates__(twoD=True, **kwargs)
 
     # get radial, velocity, and dispersion maps (2D in plane of the sky)
-    if True:
-        if 'IIdx' in kwargs['par'].keys():
-            IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-                    (R, kwargs['par']['Rd'], kwargs['par']['IIdx']) *
-                    kwargs['par']['I0'])
-        else:
-            IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-                    (R, kwargs['par']['Rd']) * kwargs['par']['I0'])
-            if 'VIdx' in kwargs['par'].keys():
-                VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
-                             '_')(R, kwargs['par']['Rv'], kwargs['par']
-                                  ['VIdx']) * kwargs['par']['Vmax'])
-            else:
-                VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
-                             '_')(R, kwargs['par']['Rv']) *
-                        kwargs['par']['Vmax'])
-        # note that VMap is based on the "sky angle" (Phi)
-        VMap = __get_centralvelocity__(PhiPrime, VDep, **kwargs)
-        DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
-                (R, kwargs['par']['Rv']) * kwargs['par']['Disp'])
-
-        # convert these maps into 3d arrays
-        ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
-        VCube = np.tile(VMap, (kwargs['shape'][-3], 1, 1))
-        DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
-
-        # create velocity array (in pixel units)
-        ZCube = np.indices(kwargs['shape'])[0]
+    if 'IIdx' in kwargs['par'].keys():
+        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                (R, kwargs['par']['Rd'], kwargs['par']['IIdx']) *
+                kwargs['par']['I0'])
     else:
-        profile = kwargs['mstring']['intensityprofile']
-        IArray = __getarray__(profile=profile, CP=[RPrime, None, None],
-                              C1P=None, C2P=None, C3P=None,
-                              scale=[None, None, None],
-                              sidx=[None, None, None],
-                              separable=True, **kwargs)
-        print(IArray)
+        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                (R, kwargs['par']['Rd']) * kwargs['par']['I0'])
+    if 'VIdx' in kwargs['par'].keys():
+        VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
+                     '_')(R, kwargs['par']['Rv'], kwargs['par']
+                          ['VIdx']) * kwargs['par']['Vmax'])
+    else:
+        VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
+                     '_')(R, kwargs['par']['Rv']) *
+                kwargs['par']['Vmax'])
+    # note that VMap is based on the "sky angle" (Phi)
+    VMap = __get_centralvelocity__(PhiPrime, VDep, **kwargs)
+    DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
+            (R, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+
+    # convert these maps into 3d arrays
+    ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
+    VCube = np.tile(VMap, (kwargs['shape'][-3], 1, 1))
+    DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
+
+    # create velocity array (in pixel units)
+    ZCube = np.indices(kwargs['shape'])[0]
 
     # create the model
     Model = (ICube * np.exp(-1 * (ZCube - VCube)**2 / (2 * DCube**2)))
@@ -189,8 +180,8 @@ def DispersionBulge(**kwargs):
     else:
         IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
                 (RPrime, kwargs['par']['Rd']) * kwargs['par']['I0'])
-        DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
-                (RPrime, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+    DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
+            (RPrime, kwargs['par']['Rv']) * kwargs['par']['Disp'])
 
     # convert these maps into 3d matrices
     ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
@@ -951,25 +942,22 @@ def __sudophi_array__(**kwargs):
     return phi
 
 
-def __getarray__(profile=None, CPrime=[None, None, None],
-                 scale=[None, None, None], sidx=[None, None, None],
+def __getarray__(profile=None, cprime=(None, None, None),
+                 scale=(None, None, None), sidx=(None, None, None),
                  separable=True, **kwargs):
 
+
     if separable:
-        first = True
-        for idx, CP in enumerate(CPrime):
-            if CP is not None:
+        for idx, cp in enumerate(cprime):
+            if cp is not None:
                 if scale[idx] is None:
                     raise ValueError('__getintensityarray__: Set the scale ' +
                                      'for coordinate index-{}'.format(idx))
                 tArray = (eval('_' + profile[idx] + '_')
-                          (CP, scale[idx], sidx[idx]))
-                if first:
-                    Array = tArray
-                    first = False
-                else:
-                    Array *= tArray
+                          (cp, scale[idx], sidx[idx]))
+                Array *= tArray
     else:
+        Array = []
         raise NotImplementedError('__getintensityarray__: Non separable ' +
                                   'profiles have not been implemented')
 
