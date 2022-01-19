@@ -25,15 +25,7 @@ def make_4panelfigure(cube_file, cont_file, channels=None, center=None,
     scale, new_origin = __get_scale_origin__(cube, center, size, origin)
 
     # get the moments of the cube
-    mom0 = cube.calculate_moment(moment=0, channels=channels)
-    mask = mom0.mask_region(value=mom0_rms * mask_rms, applymask=False)
-    cube_m = cube.mask_region(value=0.0)
-    mom1 = cube.calculate_moment(moment=1, channels=channels)
-    mom2 = cube_m.calculate_moment(moment=2, channels=channels)
-    if not quick:
-        mom1, mom2 = cube.gaussian_moment(mom1=mom1, mom2=mom2)
-    mom1 = mom1.mask_region(mask=mask)
-    mom2 = mom2.mask_region(mask=mask)
+    mom0, mom1, mom2 = __get_mom__(cube, channels, mom0only=False, quick=quick)
 
     # define the ranges for the figure
     if in_sigma:
@@ -92,15 +84,7 @@ def make_3panelfigure(cube_file, channels=None, center=None, size=50, origin=Non
     scale, new_origin = __get_scale_origin__(cube, center, size, origin)
 
     # get the moments of the cube
-    mom0 = cube.calculate_moment(moment=0, channels=channels)
-    mask = mom0.mask_region(value=mom0_rms * mask_rms, applymask=False)
-    cube_m = cube.mask_region(value=0.0)
-    mom1 = cube.calculate_moment(moment=1, channels=channels)
-    mom2 = cube_m.calculate_moment(moment=2, channels=channels)
-    if not quick:
-        mom1, mom2 = cube.gaussian_moment(mom1=mom1, mom2=mom2)
-    mom1 = mom1.mask_region(mask=mask)
-    mom2 = mom2.mask_region(mask=mask)
+    mom0, mom1, mom2 = __get_mom__(cube, channels, mom0only=False, quick=quick)
 
     # define the ranges for the figure
     if in_sigma:
@@ -147,39 +131,30 @@ def make_1panelfigure(datafile, plot, channels=None, center=None,
                       size=50, origin=None, mask_rms=3, quick=False,
                       tick_value=1.0, vrange=(-3, 11), in_sigma=True,
                       ticks=0.2, cont_in_ujy=True, do_contour=True,
-                      cmap='RdYlBu_r', fig_file=None, **kwargs):
+                      cmap='RdYlBu_r', fig_file=None,
+                      ctext='', cdata_rms=None, **kwargs):
 
-    # load the cube and cont, trim, and calculate the rms
+    # define the data and text dictionary
     if plot == 'cont':
-        data, data_rms = __load_cont__(datafile, cont_in_ujy, center, size)
-        text = r'Continuum flux density ($\mathrm{\mu}$Jy beam$^{-1}$)'
+        tdata, data_rms = __load_cont__(cont_file, cont_in_ujy, center, size)
     else:
-        data, data_rms = __load_cube__(datafile, channels, center, size)
+        tdata, data_rms = __load_cube__(cube_file, channels, center, size)
+    data = {'cont': tdata
+            'mom0': __get_mom__(tdata, channels, mom0only=True, quick=quick)
+            'mom1': __get_mom__(tdata, channels, mom0only=False, quick=quick)(1),
+            'mom2': __get_mom__(tdata, channels, mom0only=False, quick=quick)(2),
+            'cust': datafile}
 
+    text = {'cont': r'Continuum flux density ($\mu$Jy beam$^{-1}$)',
+            'mom0': r'Integrated [CII] flux (Jy km s$^{-1}$ beam$^{-1}$)',
+            'mom1': r'Mean velocity (km s$^{-1}$)',
+            'mom2': r'Velocity dispersion (km s$^{-1}$)',
+            'cust': ctext}
+    if cdata_rms is not None:
+        data_rms = cdata_rms
+    
     # get the scale and the origin in the smaller region
     scale, new_origin = __get_scale_origin__(data, center, size, origin)
-
-    # get the moments of the cube and apply mask
-    if plot != 'cont':
-        mom0 = data.calculate_moment(moment=0, channels=channels)
-    if plot == 'mom1' or plot == 'mom2':
-        mask = mom0.mask_region(value=data_rms * mask_rms, applymask=False)
-        data_m = data.mask_region(value=0.0)
-        mom1 = data.calculate_moment(moment=1, channels=channels)
-        mom2 = data_m.calculate_moment(moment=2, channels=channels)
-        if not quick:
-            mom1, mom2 = data.gaussian_moment(mom1=mom1, mom2=mom2)
-        mom1 = mom1.mask_region(mask=mask)
-        mom2 = mom2.mask_region(mask=mask)
-    if plot == 'mom0':
-        data = mom0
-        text = r'Integrated [CII] flux (Jy km s$^{-1}$ beam$^{-1}$)'
-    elif plot == 'mom1':
-        data = mom1
-        text = r'Mean velocity (km s$^{-1}$)'
-    elif plot == 'mom2':
-        data = mom2
-        text =  r'Velocity dispersion (km s$^{-1}$)'
 
     # define the range and contour levels for the figure
     if in_sigma:
@@ -192,17 +167,17 @@ def make_1panelfigure(datafile, plot, channels=None, center=None,
     fig, ax = plt.subplots(1, 1, figsize=(4.6, 4))
     plt.subplots_adjust(left=0.08, right=0.99, top=0.90, bottom=0.12)
     if do_contour:
-        standardfig(raster=data, contour=data, ax=ax, fig=fig, origin=new_origin,
+        standardfig(raster=data[plot], contour=data[plot], ax=ax, fig=fig, origin=new_origin,
                     scale=scale, cmap=cmap, vrange=vrange, cbar=True,
                     vscale=ticks, tickint=tick_value, clevels=clevels,
                     flip=True, **kwargs)
     else:
-        standardfig(raster=data, ax=ax, fig=fig, origin=new_origin,
+        standardfig(raster=data[plot], ax=ax, fig=fig, origin=new_origin,
                     scale=scale, cmap=cmap, vrange=vrange, cbar=True,
                     vscale=ticks, tickint=tick_value, flip=True, **kwargs)
 
     # Figure text
-    fig.text(0.5, 0.93, text, fontsize=14, color='black', ha='center')
+    fig.text(0.5, 0.93, text[plot], fontsize=14, color='black', ha='center')
     fig.text(0.5, 0.03, r'$\Delta$ R.A. (arcsec)', fontsize=14,
              ha='center')
     fig.text(0.03, 0.5, r'$\Delta$ Decl. (arcsec)', fontsize=14,
@@ -369,6 +344,21 @@ def __get_scale_origin__(qf_object, center, size, origin):
     new_origin = (origin[0] - center[0] + size, origin[1] - center[1] + size)
     return scale, new_origin
 
+
+def __get_mom__(cube, channels, mom0only=False, quick=False):
+    mom0 = cube.calculate_moment(moment=0, channels=channels)
+    if mom0only:
+        return mom0
+    else:
+        mask = mom0.mask_region(value=mom0_rms * mask_rms, applymask=False)
+        cube_m = cube.mask_region(value=0.0)
+        mom1 = cube.calculate_moment(moment=1, channels=channels)
+        mom2 = cube_m.calculate_moment(moment=2, channels=channels)
+        if not quick:
+            mom1, mom2 = cube.gaussian_moment(mom1=mom1, mom2=mom2)
+        mom1 = mom1.mask_region(mask=mask)
+        mom2 = mom2.mask_region(mask=mask)
+        return mom0, mom1, mom2 
 
 def __fig_properties__():
 
