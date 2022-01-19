@@ -214,14 +214,14 @@ def make_1panelfigure(datafile, plot, channels=None, center=None,
 
 def make_cmfigure(cube_file, center=None, channels=None, size=50,
                   origin=None, nrows=3, ncols=5, step=1, vrange=(-3, 11),
-                  in_sigma=True, fig_file=None, ticks=0.1, average=False,
-                  tick_value=1.0, figsize=(10, 6), **kwargs):
+                  in_sigma=True, fig_file=None, ticks=0.1, in_mjy=True,
+                  tick_value=1.0, figsize=(9, 6), cbsize=[0.10, 0.90, 0.86, 0.03],
+                  gridsize=(0.08, 0.06, 0.90, 0.82), **kwargs)
 
     # load the cube and parameters:
     cube, _mom0_rms = __load_cube__(cube_file, channels, center, size)
-    if average is True:
-        cube.data = (cube.data + np.roll(cube.data, -1, 0)) / 2.
-    cube.data *= 1E3
+    if in_mjy:
+        cube.data *= 1E3
     cube_rms = np.median(cube.calculate_sigma()[0:20])
     scale, new_origin = __get_scale_origin__(cube, center, size, origin)
     if channels == 'None':
@@ -232,7 +232,7 @@ def make_cmfigure(cube_file, center=None, channels=None, size=50,
     
     __fig_properties__()
     fig = plt.figure(figsize=figsize)
-    grid = ImageGrid(fig, (0.08, 0.06, 0.90, 0.82), nrows_ncols=(nrows, ncols),
+    grid = ImageGrid(fig, gridsize, nrows_ncols=(nrows, ncols),
                      axes_pad=0.00, cbar_mode='none', share_all=True)
     for idx, channel in enumerate(np.arange(channels[0], channels[1], step=step)):
 
@@ -243,7 +243,7 @@ def make_cmfigure(cube_file, center=None, channels=None, size=50,
             beambool = False
 
         # get the string value of the velocity
-        velocity_string = str(int(round(velocity_array[channel] + 10))) + ' km s$^{-1}$'
+        velocity_string = str(int(round(velocity_array[channel]))) + ' km s$^{-1}$'
 
         cubeimage = cube.get_slice(zindex=(channel, channel+1))
         clevels = np.insert(2 * np.power(np.sqrt(2), np.arange(0, 5)), 0,
@@ -258,13 +258,13 @@ def make_cmfigure(cube_file, center=None, channels=None, size=50,
     # add colorbar
     img = plt.imshow(cubeimage.data, cmap='RdYlBu_r', vmin=vrange[0], vmax=vrange[1])
     plt.gca().set_visible(False)
-    cbaxes = fig.add_axes([0.10, 0.90, 0.86, 0.03])
+    cbaxes = fig.add_axes(cbsize)
     cb = plt.colorbar(img, cax=cbaxes, orientation='horizontal')
     cb.ax.tick_params(axis='x', direction='out', top=True, bottom=False,
                       labelbottom=False, labeltop=True)
-    fig.text(0.52, 0.97, 'Flux density (mJy beam$^{-1}$)', fontsize=13, ha='center')
 
     # add text
+    fig.text(0.52, 0.97, 'Flux density (mJy beam$^{-1}$)', fontsize=13, ha='center')
     fig.text(0.52, 0.015, '$\\Delta$ R.A. (arcsec)', fontsize=13, ha='center')
     fig.text(0.015, 0.5, '$\\Delta$ Decl. (arcsec)', fontsize=13, va='center', rotation=90)
 
