@@ -216,7 +216,7 @@ def make_cmfigure(cube_file, center=None, channels=None, size=50,
                   origin=None, nrows=3, ncols=5, step=1, vrange=(-3, 11),
                   in_sigma=True, fig_file=None, ticks=0.1, in_mjy=True,
                   tick_value=1.0, figsize=(9, 6), cbsize=[0.10, 0.90, 0.86, 0.03],
-                  gridsize=(0.08, 0.06, 0.90, 0.82), **kwargs)
+                  gridsize=(0.08, 0.06, 0.90, 0.82), **kwargs):
 
     # load the cube and parameters:
     cube, _mom0_rms = __load_cube__(cube_file, channels, center, size)
