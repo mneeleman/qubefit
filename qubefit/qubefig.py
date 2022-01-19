@@ -8,6 +8,77 @@ from astropy.io import ascii
 from astropy.table import Table
 
 
+def make_4panelfigure(cube_file, cont_file, channels=None, center=None,
+                      size=50, origin=None, mask_rms=3, quick=False,
+                      tick_value=1.0, cont_range=(-3, 11), mom0_range=(-3, 11),
+                      mom1_range=(-200, 200), mom2_range=(0, 250), in_sigma=True,
+                      cont_ticks=50, mom0_ticks=0.2, mom1_ticks=50, mom2_ticks=50,
+                      cont_in_ujy=True, do_contours=(True, True, False, False),
+                      cmaps=('RdYlBu_r', 'RdYlBu_r', 'Spectral_r', 'Spectral_r'),
+                      fig_file=None):
+
+    # load the cube and cont, trim, and calculate the rms
+    cube, mom0_rms = __load_cube__(cube_file, channels, center, size)
+    cont, cont_rms = __load_cont__(cont_file, cont_in_ujy, center, size)
+
+    # get the scale and the origin in the smaller region
+    scale, new_origin = __get_scale_origin__(cube, center, size, origin)
+
+    # get the moments of the cube
+    mom0 = cube.calculate_moment(moment=0, channels=channels)
+    mask = mom0.mask_region(value=mom0_rms * mask_rms, applymask=False)
+    cube_m = cube.mask_region(value=0.0)
+    mom1 = cube.calculate_moment(moment=1, channels=channels)
+    mom2 = cube_m.calculate_moment(moment=2, channels=channels)
+    if not quick:
+        mom1, mom2 = cube.gaussian_moment(mom1=mom1, mom2=mom2)
+    mom1 = mom1.mask_region(mask=mask)
+    mom2 = mom2.mask_region(mask=mask)
+
+    # define the ranges for the figure
+    if in_sigma:
+        v_ranges = [np.array(cont_range) * cont_rms, np.array(mom0_range) * mom0_rms,
+                    mom1_range, mom2_range]
+    else:
+        v_ranges = [cont_range, mom0_range, mom1_range, mom2_range]
+    v_ticks = [cont_ticks, mom0_ticks, mom1_ticks, mom2_ticks]
+    c_levels = [np.insert(3 * np.power(np.sqrt(2), np.arange(15)), 0, -3) * cont_rms,
+                np.insert(3 * np.power(np.sqrt(2), np.arange(15)), 0, -3) * mom0_rms,
+                50, 50]
+
+    # create the figure
+    __fig_properties__()
+    fig = plt.figure(1, (8., 8))
+    grid = ImageGrid(fig, 111, nrows_ncols=(2, 2), axes_pad=0.5, cbar_mode='each',
+                     cbar_location='right', cbar_pad=0.0)
+    iterable = zip(grid, grid.cbar_axes, [cont, mom0, mom1, mom2], v_ranges, v_ticks, cmaps, do_contours, c_levels)
+    for ax, cax, qf_object, v_range, v_tick, cmap, do_contour, c_level in iterable:
+        if do_contour:
+            standardfig(raster=qf_object, contour=qf_object, ax=ax, fig=fig, origin=new_origin,
+                        scale=scale, cmap=cmap, vrange=v_range, cbar=True, cbaraxis=cax,
+                        vscale=v_tick, tickint=tick_value, clevels=c_level, flip=True)
+        else:
+            standardfig(raster=qf_object, ax=ax, fig=fig, origin=new_origin,
+                        scale=scale, cmap=cmap, vrange=v_range, cbar=True, cbaraxis=cax,
+                        vscale=v_tick, tickint=tick_value, flip=True)
+
+    # Figure text
+    fig.text(0.10, 0.89, r'Continuum flux density ($\mathrm{\mu}$Jy beam$^{-1}$)',
+             fontsize=12, color='black')
+    fig.text(0.53, 0.89, r'Integrated [CII] flux (Jy km s$^{-1}$ beam$^{-1}$)',
+             fontsize=12, color='black')
+    fig.text(0.18, 0.48, r'Mean velocity (km s$^{-1}$)', fontsize=14, color='black')
+    fig.text(0.57, 0.48, r'Velocity dispersion (km s$^{-1}$)', fontsize=14,
+             color='black')
+
+    fig.text(0.5, 0.04, r'$\Delta$ R.A. (arcsec)', fontsize=20, ha='center')
+    fig.text(0.03, 0.5, r'$\Delta$ Decl. (arcsec)', fontsize=20, va='center',
+             rotation=90)
+
+    # save the figure
+    __save_fig__(fig_file)
+
+
 def make_3panelfigure(cube_file, channels=None, center=None, size=50, origin=None,
                       mask_rms=3, quick=False, tick_value=1.0, mom0_range=(-3, 11),
                       mom1_range=(-200, 200), mom2_range=(0, 250), in_sigma=True,
