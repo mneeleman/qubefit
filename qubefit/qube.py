@@ -526,7 +526,7 @@ class Qube(object):
         return mom
 
     def gaussian_moment(self, mom1=None, mom2=None, channels=None,
-                        use_model=False, **kwargs):
+                        use_model=False, return_amp=False, **kwargs):
         """
         Calculate the Gaussian 'moments' of the cube.
 
@@ -588,6 +588,8 @@ class Qube(object):
             data = data.get_slice(zindex=channels)
 
         # the guesses:
+        if return_amp:
+            amp = data.calculate_moment(moment=0, use_model=use_model)
         if mom1 is None:
             mom1 = data.calculate_moment(moment=1, use_model=use_model)
         if mom2 is None:
@@ -614,11 +616,18 @@ class Qube(object):
                     g = fit_g(g_init, VelArr[isfin], RowData[isfin])
                     mom1.data[jj, ii] = g.mean.value
                     mom2.data[jj, ii] = g.stddev.value
+                    if return_amp:
+                        amp.data[jj, ii] = g.amplitude.value
                 else:
+                    if return_amp:
+                        amp.data[jj, ii] = np.NaN
                     mom1.data[jj, ii] = np.NaN
                     mom2.data[jj, ii] = np.NaN
 
-        return mom1, mom2
+        if return_amp:
+            return amp, mom1, mom2
+        else:
+            return mom1, mom2
 
     def get_spec1d(self, continuum_correct=False, limits=None,
                    beam_correct=True, use_model=False, **kwargs):
@@ -831,9 +840,14 @@ class Qube(object):
         # continuum image or moment image), then store the beam in the
         # primary header and remove the CASAMBM
         if self.beam['BMAJ'].size == 1:
-            self.header['BMAJ'] = self.beam['BMAJ'][0]
-            self.header['BMIN'] = self.beam['BMIN'][0]
-            self.header['BPA'] = self.beam['BPA'][0]
+            try:
+                self.header['BMAJ'] = self.beam['BMAJ'][0]
+                self.header['BMIN'] = self.beam['BMIN'][0]
+                self.header['BPA'] = self.beam['BPA'][0]
+            except IndexError:
+                self.header['BMAJ'] = self.beam['BMAJ']
+                self.header['BMIN'] = self.beam['BMIN']
+                self.header['BPA'] = self.beam['BPA']
             self.header.remove('CASAMBM', ignore_missing=True)
             Fit = fits.PrimaryHDU(self.data, header=self.header)
             Fit.writeto(fitsfile, overwrite=True)
@@ -1170,8 +1184,9 @@ class Qube(object):
         self.header.set('RESTFRQ', restfreq)
 
         #  add CDELT3 keyword and convert values to frequency
-        cdelt3 = self.header['CD3_3']
-        self.header.set('CDELT3', cdelt3)
+        if 'CD3_3' in self.header:
+            cdelt3 = self.header['CD3_3']
+            self.header.set('CDELT3', cdelt3)
 
         # add some 'fake' beam parameters these should be first
         # updated to the seeing values of the data.

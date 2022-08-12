@@ -8,50 +8,48 @@ from astropy.io import ascii
 from astropy.table import Table
 
 
-def make_4panelfigure(cube_file, cont_file, channels=None, center=None,
-                      size=50, origin=None, mask_rms=3, quick=False,
-                      tick_value=1.0, cont_range=(-3, 11), mom0_range=(-3, 11),
+def make_4panelfigure(tick_value=1.0, cont_range=(-3, 11), mom0_range=(-3, 11),
                       mom1_range=(-200, 200), mom2_range=(0, 250), in_sigma=True,
                       cont_ticks=50, mom0_ticks=0.2, mom1_ticks=50, mom2_ticks=50,
-                      cont_in_ujy=True, do_contours=(True, True, False, False),
+                      do_contour=(True, True, False, False), clevels=None,
                       cmaps=('RdYlBu_r', 'RdYlBu_r', 'Spectral_r', 'Spectral_r'),
-                      fig_file=None):
+                      cont_in_ujy=True, plot_fig=None, **kwargs):
 
-    # load the cube and cont, trim, and calculate the rms
-    cube, mom0_rms = __load_cube__(cube_file, channels, center, size)
-    cont, cont_rms = __load_cont__(cont_file, cont_in_ujy, center, size)
+    # get_data
+    data = get_data(**kwargs)
+    if cont_in_ujy:
+        data['cont'].data *= 1E6
+        data['cont_rms'] *= 1E6
 
-    # get the scale and the origin in the smaller region
-    scale, new_origin = __get_scale_origin__(cube, center, size, origin)
-
-    # get the moments of the cube
-    mom0, mom1, mom2 = __get_mom__(cube, channels, mom0only=False, quick=quick)
-
-    # define the ranges for the figure
+    # define plot properties from the data
     if in_sigma:
-        v_ranges = [np.array(cont_range) * cont_rms, np.array(mom0_range) * mom0_rms,
+        v_ranges = [np.array(cont_range) * data['cont_rms'],
+                    np.array(mom0_range) * data['mom0_rms'],
                     mom1_range, mom2_range]
     else:
         v_ranges = [cont_range, mom0_range, mom1_range, mom2_range]
     v_ticks = [cont_ticks, mom0_ticks, mom1_ticks, mom2_ticks]
-    c_levels = [np.insert(3 * np.power(np.sqrt(2), np.arange(15)), 0, -3) * cont_rms,
-                np.insert(3 * np.power(np.sqrt(2), np.arange(15)), 0, -3) * mom0_rms,
-                50, 50]
+    if clevels is None and do_contour:  # standard contours start at 3sigma and increase in powers of sqrt(2)
+        psqrt2 = np.power(np.sqrt(2), np.arange(15))
+        clevels = [np.insert(3 * psqrt2, 0, -3 * np.flip(psqrt2)) * data['cont_rms'],
+                   np.insert(3 * psqrt2, 0, -3 * np.flip(psqrt2)) * data['mom0_rms'],
+                   50, 50]
 
     # create the figure
     __fig_properties__()
     fig = plt.figure(1, (8., 8))
     grid = ImageGrid(fig, 111, nrows_ncols=(2, 2), axes_pad=0.5, cbar_mode='each',
                      cbar_location='right', cbar_pad=0.0)
-    iterable = zip(grid, grid.cbar_axes, [cont, mom0, mom1, mom2], v_ranges, v_ticks, cmaps, do_contours, c_levels)
-    for ax, cax, qf_object, v_range, v_tick, cmap, do_contour, c_level in iterable:
-        if do_contour:
-            standardfig(raster=qf_object, contour=qf_object, ax=ax, fig=fig, origin=new_origin,
-                        scale=scale, cmap=cmap, vrange=v_range, cbar=True, cbaraxis=cax,
+    iterable = zip(grid, grid.cbar_axes, [data['cont'], data['mom0'], data['mom1'], data['mom2']],
+                   v_ranges, v_ticks, cmaps, do_contour, clevels)
+    for ax, cax, qf_object, v_range, v_tick, cmap, do_cont, c_level in iterable:
+        if do_cont:
+            standardfig(raster=qf_object, contour=qf_object, ax=ax, fig=fig, origin=data['origin'],
+                        scale=data['scale'], cmap=cmap, vrange=v_range, cbar=True, cbaraxis=cax,
                         vscale=v_tick, tickint=tick_value, clevels=c_level, flip=True)
         else:
-            standardfig(raster=qf_object, ax=ax, fig=fig, origin=new_origin,
-                        scale=scale, cmap=cmap, vrange=v_range, cbar=True, cbaraxis=cax,
+            standardfig(raster=qf_object, ax=ax, fig=fig, origin=data['origin'],
+                        scale=data['scale'], cmap=cmap, vrange=v_range, cbar=True, cbaraxis=cax,
                         vscale=v_tick, tickint=tick_value, flip=True)
 
     # Figure text
@@ -68,14 +66,16 @@ def make_4panelfigure(cube_file, cont_file, channels=None, center=None,
              rotation=90)
 
     # save the figure
-    __save_fig__(fig_file)
+    if plot_fig is None:
+        return fig
+    else:
+        __save_fig__(plot_fig)
 
 
-def make_3panelfigure(cube_file, channels=None, center=None, size=50, origin=None,
-                      mask_rms=3, quick=False, tick_value=1.0, mom0_range=(-3, 11),
+def make_3panelfigure(tick_value=1.0, mom0_range=(-3, 11),
                       mom1_range=(-200, 200), mom2_range=(0, 250), in_sigma=True,
                       mom0_ticks=0.2, mom1_ticks=50, mom2_ticks=50, do_contours=(True, False, False),
-                      cmaps=('RdYlBu_r', 'Spectral_r', 'Spectral_r'), fig_file=None):
+                      cmaps=('RdYlBu_r', 'Spectral_r', 'Spectral_r'), plto_fig=None, **kwargs):
 
     # load the cube and cont, trim, and calculate the rms
     cube, mom0_rms = __load_cube__(cube_file, channels, center, size)
@@ -124,57 +124,56 @@ def make_3panelfigure(cube_file, channels=None, center=None, size=50, origin=Non
              rotation=90)
 
     # save the figure
-    __save_fig__(fig_file)
+    if plot_fig is None:
+        return fig
+    else:
+        __save_fig__(plot_fig)
 
 
-def make_1panelfigure(datafile, plot, channels=None, center=None,
-                      size=50, origin=None, mask_rms=3, quick=False,
-                      tick_value=1.0, vrange=(-3, 11), in_sigma=True,
-                      ticks=0.2, cont_in_ujy=True, do_contour=True,
-                      cmap='RdYlBu_r', fig_file=None,
-                      ctext='', cdata_rms=None, **kwargs):
+def make_1panelfigure(plot=None, tick_value=1.0, vrange=(-3, 11), in_sigma=True, cb_ticks=0.2,
+                      cont_in_ujy=False, do_contour=True, cmap='RdYlBu_r', ctext='', clevels=None,
+                      plot_fig=None, cbar=True, fig_size=(4.6, 4), fig_adjust=[0.08, 0.99, 0.90, 0.12],
+                      **kwargs):
 
     # define the data and text dictionary
-    if plot == 'cont':
-        tdata, data_rms = __load_cont__(cont_file, cont_in_ujy, center, size)
-    else:
-        tdata, data_rms = __load_cube__(cube_file, channels, center, size)
-    data = {'cont': tdata
-            'mom0': __get_mom__(tdata, channels, mom0only=True, quick=quick)
-            'mom1': __get_mom__(tdata, channels, mom0only=False, quick=quick)(1),
-            'mom2': __get_mom__(tdata, channels, mom0only=False, quick=quick)(2),
-            'cust': datafile}
-
+    data = get_data(**kwargs)
     text = {'cont': r'Continuum flux density ($\mu$Jy beam$^{-1}$)',
             'mom0': r'Integrated [CII] flux (Jy km s$^{-1}$ beam$^{-1}$)',
             'mom1': r'Mean velocity (km s$^{-1}$)',
             'mom2': r'Velocity dispersion (km s$^{-1}$)',
             'cust': ctext}
-    if cdata_rms is not None:
-        data_rms = cdata_rms
-    
-    # get the scale and the origin in the smaller region
-    scale, new_origin = __get_scale_origin__(data, center, size, origin)
 
-    # define the range and contour levels for the figure
+    # define the plot properties
+    if cont_in_ujy:
+        data['cont'].data *= 1E6
+        data['cont_rms'] *= 1E6
+    if plot == 'cont':
+        data_rms = data['cont_rms']
+    elif plot == 'mom0':
+        data_rms = data['mom0_rms']
+    elif plot == 'cust':
+        data_rms = data['cust_rms']
+    else:
+        data_rms = 1.
     if in_sigma:
         vrange = np.array(vrange) * data_rms
-    if do_contour:
-        clevels = np.insert(3 * np.power(np.sqrt(2), np.arange(15)), 0, -3) * data_rms
+    if clevels is None and do_contour:  # standard contours start at 3sigma and increase in powers of sqrt(2)
+        psqrt2 = np.power(np.sqrt(2), np.arange(15))
+        clevels = np.insert(3 * psqrt2, 0, -3 * np.flip(psqrt2)) * data_rms
 
     # create the figure
     __fig_properties__()
-    fig, ax = plt.subplots(1, 1, figsize=(4.6, 4))
-    plt.subplots_adjust(left=0.08, right=0.99, top=0.90, bottom=0.12)
+    fig, ax = plt.subplots(1, 1, figsize=fig_size)
+    plt.subplots_adjust(left=fig_adjust[0], right=fig_adjust[1], top=fig_adjust[2], bottom=fig_adjust[3])
     if do_contour:
-        standardfig(raster=data[plot], contour=data[plot], ax=ax, fig=fig, origin=new_origin,
-                    scale=scale, cmap=cmap, vrange=vrange, cbar=True,
-                    vscale=ticks, tickint=tick_value, clevels=clevels,
+        standardfig(raster=data[plot], contour=data[plot], ax=ax, fig=fig, origin=data['origin'],
+                    scale=data['scale'], cmap=cmap, vrange=vrange, cbar=cbar,
+                    vscale=cb_ticks, tickint=tick_value, clevels=clevels,
                     flip=True, **kwargs)
     else:
-        standardfig(raster=data[plot], ax=ax, fig=fig, origin=new_origin,
-                    scale=scale, cmap=cmap, vrange=vrange, cbar=True,
-                    vscale=ticks, tickint=tick_value, flip=True, **kwargs)
+        standardfig(raster=data[plot], ax=ax, fig=fig, origin=data['origin'],
+                    scale=data['scale'], cmap=cmap, vrange=vrange, cbar=cbar,
+                    vscale=cb_ticks, tickint=tick_value, flip=True, **kwargs)
 
     # Figure text
     fig.text(0.5, 0.93, text[plot], fontsize=14, color='black', ha='center')
@@ -184,27 +183,37 @@ def make_1panelfigure(datafile, plot, channels=None, center=None,
              va='center', rotation=90)
 
     # save the figure
-    __save_fig__(fig_file)
+    if plot_fig is None:
+        return fig
+    else:
+        __save_fig__(plot_fig)
 
 
-def make_cmfigure(cube_file, center=None, channels=None, size=50,
-                  origin=None, nrows=3, ncols=5, step=1, vrange=(-3, 11),
-                  in_sigma=True, fig_file=None, ticks=0.1, in_mjy=True,
-                  tick_value=1.0, figsize=(9, 6), cbsize=[0.10, 0.90, 0.86, 0.03],
-                  gridsize=(0.08, 0.06, 0.90, 0.82), **kwargs):
+def make_cmfigure(nrows=3, ncols=5, step=1, vrange=(-3, 11), in_sigma=True, cmap='RdYlBu_r',
+                  cb_ticks=0.1, tick_value=1.0, figsize=(9, 6), cb_size=[0.10, 0.90, 0.86, 0.03],
+                  gridsize=(0.08, 0.06, 0.90, 0.82), clevels=None, cube_rms=None, plot_fig=None,
+                  cube_in_mjy=True, **kwargs):
 
-    # load the cube and parameters:
-    cube, _mom0_rms = __load_cube__(cube_file, channels, center, size)
-    if in_mjy:
-        cube.data *= 1E3
-    cube_rms = np.median(cube.calculate_sigma()[0:20])
-    scale, new_origin = __get_scale_origin__(cube, center, size, origin)
-    if channels == 'None':
-        channels = (0, cube.data.shape[0])
-    velocity_array = cube.get_velocity()
+    # get the data
+    data = get_data(**kwargs)
+    if cube_in_mjy:
+        data['cube'].data *= 1E3
+    
+    # define the plot properties from the data
+    if data['channels'] is None:
+        channels = (0, data['cube'].data.shape[0])
+    else:
+        channels = data['channels']
+    velocity_array = data['cube'].get_velocity()
+    if cube_rms is None:
+        cube_rms = np.median(data['cube'].calculate_sigma()[0:20])
     if in_sigma:
         vrange = np.array(vrange) * cube_rms
-    
+    if clevels is None:  # defaults to start at 2 sigma increase in powers of sqrt(2).
+        psqrt2 = np.power(np.sqrt(2), np.arange(15))
+        clevels = np.insert(2 * psqrt2, 0, -2 * np.flip(psqrt2)) * cube_rms
+
+    # plot
     __fig_properties__()
     fig = plt.figure(figsize=figsize)
     grid = ImageGrid(fig, gridsize, nrows_ncols=(nrows, ncols),
@@ -220,21 +229,19 @@ def make_cmfigure(cube_file, center=None, channels=None, size=50,
         # get the string value of the velocity
         velocity_string = str(int(round(velocity_array[channel]))) + ' km s$^{-1}$'
 
-        cubeimage = cube.get_slice(zindex=(channel, channel+1))
-        clevels = np.insert(2 * np.power(np.sqrt(2), np.arange(0, 5)), 0,
-                            [-4, -2.82, -2]) * cube_rms
+        cubeimage = data['cube'].get_slice(zindex=(channel, channel+1))
         standardfig(raster=cubeimage, contour=cubeimage, ax=grid[idx], fig=fig,
-                    origin=new_origin, scale=scale, cmap='RdYlBu_r', vrange=vrange,
-                    cbar=False, vscale=ticks, tickint=tick_value, clevels=clevels,
+                    origin=data['origin'], scale=data['scale'], cmap=cmap, vrange=vrange,
+                    cbar=False, vscale=cb_ticks, tickint=tick_value, clevels=clevels,
                     beam=beambool, flip=True, **kwargs)
-        grid[idx].text(0.5, 0.85, velocity_string, transform=grid[idx].transAxes, fontsize=10, color='black',
-                       bbox={'facecolor': 'white', 'alpha': 0.8, 'pad': 2}, ha='center')
+        grid[idx].text(0.5, 0.85, velocity_string, transform=grid[idx].transAxes, fontsize=10,
+                       color='black', bbox={'facecolor': 'white', 'alpha': 0.8, 'pad': 2}, ha='center')
 
     # add colorbar
-    img = plt.imshow(cubeimage.data, cmap='RdYlBu_r', vmin=vrange[0], vmax=vrange[1])
+    img = plt.imshow(cubeimage.data, cmap=cmap, vmin=vrange[0], vmax=vrange[1])
     plt.gca().set_visible(False)
-    cbaxes = fig.add_axes(cbsize)
-    cb = plt.colorbar(img, cax=cbaxes, orientation='horizontal')
+    cb_axes = fig.add_axes(cb_size)
+    cb = plt.colorbar(img, cax=cb_axes, orientation='horizontal')
     cb.ax.tick_params(axis='x', direction='out', top=True, bottom=False,
                       labelbottom=False, labeltop=True)
 
@@ -244,11 +251,14 @@ def make_cmfigure(cube_file, center=None, channels=None, size=50,
     fig.text(0.015, 0.5, '$\\Delta$ Decl. (arcsec)', fontsize=13, va='center', rotation=90)
 
     # save the figure
-    __save_fig__(fig_file)
+    if plot_fig is None:
+        return fig
+    else:
+        __save_fig__(plot_fig)
 
 
 def make_spectrumfigure(cubefile, center, size, pbcor=None, in_mjy=True,
-                        fig_file=None, table_file=None):
+                        plot_fig=None, table_file=None):
 
     # get properties of the cube
     cube = Qube.from_fits(cubefile)
@@ -307,24 +317,109 @@ def make_spectrumfigure(cubefile, center, size, pbcor=None, in_mjy=True,
                  va='center', rotation=90)
 
     # save the figure
-    __save_fig__(fig_file)
+    if plot_fig is None:
+        return fig
+    else:
+        __save_fig__(plot_fig)
+    
 
 
-def __load_cube__(cube_file, channels, center, size):
-    cube = Qube.from_fits(cube_file)
-    temp_mom0 = cube.calculate_moment(moment=0, channels=channels)
-    mom0_rms = temp_mom0.calculate_sigma()
-    cube_small = __get_slice__(cube, center, size)
-    return cube_small, mom0_rms
+def get_data(cont=None, cube=None, moments=None, cust=None, channels=None, center=None, size=None,
+             origin=None, mask_rms=3, quick=False, cont_rms=None, mom0_rms=None, cust_rms=None,
+             mom0_only=False):
+
+    # initialize the data structure
+    data = {'center':center, 'size':size, 'origin':origin, 'channels':channels}
+
+    # load the data
+    if cont is not None:
+        __load_cont__(data, cont, cont_rms=cont_rms)
+    if cube is not None:
+        __load_cube__(data, cube, mom0_rms=mom0_rms)
+    else:
+        if moments is not None:
+            if (moments[0] == True or moments[1] == True or moments[2] == True):
+                __load_cube__(data, cube, mom0_rms=mom0_rms)
+    if moments is not None:
+        __load_moments__(data, moments, mask_rms=mask_rms, mom0_only=mom0_only, quick=quick,
+                         mom0_rms=mom0_rms)
+    if cust is not None:
+        data['cust'] = Qube.from_fits(cust)
+        if data['size'] is not None:
+            data['cust'] = __get_slice__(data['cust'], data['center'], data['size'])
+    data['cust_rms'] = cust_rms
+
+    # update the data parameters
+    __update_datapars__(data)
+
+    return data
+
+    
+def __load_cube__(data, cube_file, mom0_rms=None):
+    data['cube'] = Qube.from_fits(cube_file)
+    if mom0_rms is None:
+        temp_mom0 = data['cube'].calculate_moment(moment=0, channels=data['channels'])
+        data['mom0_rms'] = temp_mom0.calculate_sigma()
+    if data['size'] is not None:
+        data['cube'] = __get_slice__(data['cube'], data['center'], data['size'])
 
 
-def __load_cont__(cont_file, cont_in_ujy, center, size):
-    cont = Qube.from_fits(cont_file)
-    if cont_in_ujy:
-        cont.data *= 1E6
-    cont_rms = cont.calculate_sigma()
-    cont_small = __get_slice__(cont, center, size)
-    return cont_small, cont_rms
+def __load_cont__(data, cont_file, cont_rms=None):
+    data['cont'] = Qube.from_fits(cont_file)
+    if cont_rms is None:
+        try:
+            data['cont_rms'] = data['cont'].header['rms']
+        except KeyError:
+            data['cont_rms'] = data['cont'].calculate_sigma()
+    else:
+        data['cont_rms'] = cont_rms
+    if data['size'] is not None:
+        data['cont'] = __get_slice__(data['cont'], data['center'], data['size'])
+
+
+def __load_moments__(data, moments, mask_rms=3, mom0_only=False, quick=False, mom0_rms=None):
+
+    # moment-0 --always load when calculating, as it is needed for the other moments
+    if moments[0] == True or moments[1] == True or moments[2] == True:
+        data['mom0'] = data['cube'].calculate_moment(moment=0, channels=data['channels'])
+    if type(moments[0]) == str:
+        data['mom0'] = Qube.from_fits(moments[0])
+   
+    # moment-0 rms any of the below two will overwrite the calculated value (if present).
+    if 'mom0' in data.keys():
+        if 'rms' in data['mom0'].header:  # this supersedes any previously calculates mom0_rms
+            data['mom0_rms'] = data['mom0'].header['rms']
+        if mom0_rms is not None:
+            data['mom0_rms'] = mom0_rms
+    
+    # calculate moments 1 and 2 (if needed)
+    if moments[1] == True or moments[2] == True:
+        mask = data['mom0'].mask_region(value=data['mom0_rms'] * mask_rms, applymask=False)
+        cube_m = data['cube'].mask_region(value=0.0)
+        mom1 = data['cube'].calculate_moment(moment=1, channels=data['channels'])
+        mom2 = cube_m.calculate_moment(moment=2, channels=data['channels'])
+        if not quick:
+            mom1, mom2 = data['cube'].gaussian_moment(mom1=mom1, mom2=mom2)
+        mom1 = mom1.mask_region(mask=mask)
+        mom2 = mom2.mask_region(mask=mask)
+
+    # moment-1
+    if type(moments[1]) == bool:
+        if moments[1]:
+            data['mom1'] = mom1
+    elif type(moments[1]) == str:
+        data['mom1'] = Qube.from_fits(moments[1])
+    else:
+        raise ValueError('moments[1] needs to be a valid string file or True/False')
+
+    # moment-2
+    if type(moments[2]) == bool:
+        if moments[2]:
+            data['mom2'] = mom2
+    elif type(moments[2]) == str:
+        data['mom2'] = Qube.from_fits(moments[2])
+    else:
+        raise ValueError('moments[2] needs to be a valid string file or True/False')
 
 
 def __get_slice__(qf_object, center, size):
@@ -336,29 +431,23 @@ def __get_slice__(qf_object, center, size):
     return qf_object_small
 
 
-def __get_scale_origin__(qf_object, center, size, origin):
-    # get the scale and the origin in the smaller region
-    scale = np.abs(qf_object.header['CDELT1']) * 3600
-    if origin is None:
-        origin = center
-    new_origin = (origin[0] - center[0] + size, origin[1] - center[1] + size)
-    return scale, new_origin
+def __update_datapars__(data):
 
+    lst = ['cont', 'cube', 'mom0', 'mom1', 'mom2', 'cust']
+    for key in lst:
+        try:
+            qf_object = data[key]
+            data['scale'] = np.abs(qf_object.header['CDELT1'] * 3600)
+            if data['center'] is None:
+                data['center'] = (qf_object.header['NAXIS1'] // 2, qf_object.header['NAXIS2'] // 2)
+            if data['origin'] is None:
+                data['origin'] = (qf_object.header['NAXIS1'] // 2, qf_object.header['NAXIS2'] // 2)
+            if data['size'] is not None:
+                data['origin'] = (data['origin'][0] - data['center'][0] + data['size'],
+                                  data['origin'][1] - data['center'][1] + data['size'])
+        except KeyError:
+            pass
 
-def __get_mom__(cube, channels, mom0only=False, quick=False):
-    mom0 = cube.calculate_moment(moment=0, channels=channels)
-    if mom0only:
-        return mom0
-    else:
-        mask = mom0.mask_region(value=mom0_rms * mask_rms, applymask=False)
-        cube_m = cube.mask_region(value=0.0)
-        mom1 = cube.calculate_moment(moment=1, channels=channels)
-        mom2 = cube_m.calculate_moment(moment=2, channels=channels)
-        if not quick:
-            mom1, mom2 = cube.gaussian_moment(mom1=mom1, mom2=mom2)
-        mom1 = mom1.mask_region(mask=mask)
-        mom2 = mom2.mask_region(mask=mask)
-        return mom0, mom1, mom2 
 
 def __fig_properties__():
 
@@ -374,9 +463,9 @@ def __fig_properties__():
     mpl.rcParams['ytick.direction'] = 'in'
 
 
-def __save_fig__(fig_file):
-    if fig_file is not None:
-        plt.savefig(fig_file, format='pdf', dpi=300)
-    else:
+def __save_fig__(plot_fig):
+    if type(plot_fig) == str:
+        plt.savefig(plot_fig, format='pdf', dpi=300)
+        plt.close('all')
+    elif type(plot_fig) == bool:
         plt.show()
-    plt.close('all')

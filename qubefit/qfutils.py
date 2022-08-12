@@ -311,7 +311,7 @@ def create_channelmap(raster=None, contour=None, clevels=None, zeropoint=0.,
         raise ValueError('Need to define either a contour or raster image.')
 
     # first genererate the velocity array
-    VelArr = tqube._getvelocity_() - zeropoint
+    VelArr = tqube.get_velocity() - zeropoint
 
     # define the number of channels, rows (and columns = already defined)
     if channels is None:
@@ -431,10 +431,9 @@ def diagnostic_plots(model, chainfile, burnin=0.3, channelmaps=True,
 
     # read in the chain data file and load it in the model then regenerate
     # the model with the wanted values (either median or best)
-    Chain = np.load(chainfile)
-    Chain = Chain[:, int(burnin * Chain.shape[1]):, :-1]
-    Chain = Chain.reshape((-1, Chain.shape[2]))
     model.get_chainresults(chainfile, burnin=burnin)
+    Chain = model.mcmcarray
+    Chain = Chain.reshape((-1, Chain.shape[2]))
     if not bestarray:
         model.update_parameters(model.chainpar['MedianArray'])
     else:
