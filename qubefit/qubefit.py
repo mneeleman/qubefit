@@ -58,20 +58,39 @@ class QubeFit(Qube):
             coordinate system this is r, phi and z in that order.
             The default is ['Constant', None, None].
     """
-
-    def __init__(self, modelname='ThinDisk', probmethod='ChiSq',
-                 intensityprofile=['Exponential', None, 'Exponential'],
-                 velocityprofile=['Constant', None, None],
-                 dispersionprofile=['Constant', None, None]):
+    def __init__(self, modelname='ThinDisk', probmethod='ChiSq', intensityprofile=None,
+                 velocityprofile=None, dispersionprofile=None):
         """Initiate the qubefit class."""
         self.modelname = modelname
-        self.intensityprofile = intensityprofile
-        self.velocityprofile = velocityprofile
-        self.dispersionprofile = dispersionprofile
+        if intensityprofile is None:
+            self.intensityprofile = ['Exponential', None, 'Exponential']
+        else:
+            self.intensityprofile = intensityprofile
+        if velocityprofile is None:
+            self.velocityprofile = ['Constant', None, None]
+        else:
+            self.velocityprofile = velocityprofile
+        if dispersionprofile is None:
+            self.dispersionprofile = ['Constant', None, None]
+        else:
+            self.dispersionprofile = dispersionprofile
         self.probmethod = probmethod
+        self.kernel = []
+        self.kernelarea = 0.
+        self.initpar = None
+        self.par = {}
+        self.mcmcpar = []
+        self.mcmcmap = []
+        self.priordist = []
+        self.mcmcdim = 0
+        self.model = np.array([])
+        self.residual = np.array([])
+        self.mcmcarray = None
+        self.mcmclnprob = None
+        self.chainpar = None
+        self.maskarray = []
 
-    def create_gaussiankernel(self, channels=None, LSFSigma=None,
-                              kernelsize=4):
+    def create_gaussiankernel(self, channels=None, lsf_sigma=None, kernelsize=4):
         """
         Create a Gaussian kernel.
 
@@ -102,7 +121,7 @@ class QubeFit(Qube):
             channel. This option, however, is currently NOT implemented in
             the code and therefore just a single channel should be specified.
             The default is None.
-        LSFSigma : FLOAT or NUMPY.ARRAY, optional
+        lsf_sigma : FLOAT or NUMPY.ARRAY, optional
             The width of the line spread function. Note that this is the
             sigma or square root of the variace, NOT the FWHM!. The unit for
             this value is pixels. If this is not specfied, then the LSF is
@@ -129,61 +148,49 @@ class QubeFit(Qube):
         if not hasattr(self, 'beam'):
             raise AttributeError('Beam attribute must be defined to create' +
                                  'gaussian kernel')
-
         # define some parameters for the beam
-        Bmaj = (self.beam['BMAJ'] / np.sqrt(8 * np.log(2)) /
-                np.abs(self.header['CDELT1']))
-        Bmin = (self.beam['BMIN'] / np.sqrt(8 * np.log(2)) /
-                np.abs(self.header['CDELT1']))
-        Bpa = self.beam['BPA']
-        theta = np.pi / 2. + np.radians(Bpa)
-        KernelArea = Bmaj * Bmin * 2 * np.pi
-
+        bmaj = self.beam['BMAJ'] / np.sqrt(8 * np.log(2)) / np.abs(self.header['CDELT1'])
+        bmin = self.beam['BMIN'] / np.sqrt(8 * np.log(2)) / np.abs(self.header['CDELT1'])
+        bpa = self.beam['BPA']
+        theta = np.pi / 2. + np.radians(bpa)
+        kernel_area = bmaj * bmin * 2 * np.pi
         # Here decide which channel(s) to use for generating the kernel
         if channels is None:
-            channels = [len(Bmaj) // 2]
+            channels = [len(bmaj) // 2]
         if type(channels) is int:
             channels = [channels]
-
         # create an array of LSFSigma (if needed)
-        if LSFSigma is not None and type(LSFSigma) is float:
-            LSFSigma = np.full(len(Bmaj), LSFSigma)
-
+        if lsf_sigma is not None and type(lsf_sigma) is float:
+            lsf_sigma = np.full(len(bmaj), lsf_sigma)
         # create a (list of) 2D kernel(s)
-        Kernel = ()
+        kernel = ()
         for ii in channels:
-            xsize = 2 * np.ceil(kernelsize*Bmaj[ii]) + 1
-            ysize = 2 * np.ceil(kernelsize*Bmaj[ii]) + 1
-            TwoDKernel = Gaussian2DKernel(Bmaj[ii], Bmin[ii], theta=theta[ii],
-                                          x_size=xsize, y_size=ysize).array
-
-        # apply the line-spread function (if wanted)
-        if LSFSigma is None:
-            Kernel = Kernel + (TwoDKernel,)
-        else:
-            LSFKernel = Gaussian1DKernel(LSFSigma[ii]).array
-            TKernel = np.zeros(LSFKernel.shape + TwoDKernel.shape)
-            TKernel[LSFKernel.shape[0] // 2, :, :] = TwoDKernel
-            ThreeDKernel = convolve(TKernel, LSFKernel[np.newaxis,
-                                                       np.newaxis, ...])
-            Kernel = Kernel+(ThreeDKernel,)
-
+            xsize = 2 * np.ceil(kernelsize*bmaj[ii]) + 1
+            ysize = 2 * np.ceil(kernelsize*bmaj[ii]) + 1
+            twod_kernel = Gaussian2DKernel(bmaj[ii], bmin[ii], theta=theta[ii], x_size=xsize, y_size=ysize).array
+            # apply the line-spread function (if wanted)
+            if lsf_sigma is None:
+                kernel = kernel + (twod_kernel, )
+            else:
+                lsf_kernel = Gaussian1DKernel(lsf_sigma[ii]).array
+                temp_kernel = np.zeros(lsf_kernel.shape + twod_kernel.shape)
+                temp_kernel[lsf_kernel.shape[0] // 2, :, :] = twod_kernel
+                threed_kernel = convolve(temp_kernel, lsf_kernel[np.newaxis, np.newaxis, ...])
+                kernel = kernel + (threed_kernel, )
         # select the kernel areas
-        KernelArea = KernelArea[channels]
-
+        kernel_area = kernel_area[channels]
         # if a single channel is given then remove the list and force the
         # single kernel to be 3D.
-        if len(Kernel) == 1:
-            Kernel = Kernel[0]
-            KernelArea = KernelArea[0]
-            if Kernel.ndim == 2:
-                Kernel = np.array([Kernel, ])
-
+        if len(kernel) == 1:
+            kernel = kernel[0]
+            kernel_area = kernel_area[0]
+            if kernel.ndim == 2:
+                kernel = np.array([kernel, ])
         # now assign the following attributes.
-        self.kernel = Kernel
-        self.kernelarea = KernelArea
+        self.kernel = kernel
+        self.kernelarea = kernel_area
 
-    def load_initialparameters(self, Parameters):
+    def load_initialparameters(self, parameters):
         """
         Load the intial parameter dictionary into the qubefit instance.
 
@@ -203,7 +210,7 @@ class QubeFit(Qube):
 
         Parameters
         ----------
-        Parameters : DICT
+        parameters : DICT
             The dictionary describes several important features for each
             parameter of the model. A detailed description is given in the
             online documentation. In general, it contains a 'Value' and 'Unit',
@@ -218,11 +225,7 @@ class QubeFit(Qube):
         None : NoneType
 
         """
-        self.initpar = Parameters
-        self.par = {}
-        self.mcmcpar = []
-        self.mcmcmap = []
-        self.priordist = []
+        self.initpar = parameters
         for key in self.initpar.keys():
 
             if self.initpar[key]['Conversion'] is not None:
@@ -238,11 +241,10 @@ class QubeFit(Qube):
                 self.priordist.append(eval(self.initpar[key]['Dist'])
                                       (loc=self.initpar[key]['Dloc'],
                                       scale=self.initpar[key]['Dscale']))
-
         # store the number of free variables of the mcmc process
         self.mcmcdim = len(self.mcmcpar)
 
-    def create_model(self, convolve=True):
+    def create_model(self, do_convolve=True):
         """
         Create the model cube with the given parameters and model.
 
@@ -256,7 +258,7 @@ class QubeFit(Qube):
 
         Parameters
         ----------
-        convolve : BOOLEAN, optional
+        do_convolve : BOOLEAN, optional
             If set, the model will be convolved with the beam.
             The default is True.
 
@@ -265,8 +267,10 @@ class QubeFit(Qube):
         None : NoneType
         """
         kwargs = self.__define_kwargs__()
-        kwargs['convolve'] = convolve
+        kwargs['convolve'] = do_convolve
         self.model = __create_model__(**kwargs)
+        if 'data' in self.__define_kwargs__().keys():
+            self.residual = self.data - self.model
 
     def run_mcmc(self, nwalkers=50, nsteps=100, nproc=None, init_frac=0.02,
                  filename=None, return_sampler=False):
@@ -317,7 +321,7 @@ class QubeFit(Qube):
         # load the hdf5 backend if filename is specified
         if filename is not None:
             if filename[-5:] != '.hdf5':
-                filename + '.hdf5'
+                filename = filename + '.hdf5'
             backend = emcee.backends.HDFBackend(filename)
         else:
             backend = None
@@ -343,13 +347,11 @@ class QubeFit(Qube):
         # define the sampler
         os.environ["OMP_NUM_THREADS"] = "1"
         with Pool(nproc) as pool:
-            sampler = emcee.EnsembleSampler(nwalkers, self.mcmcdim,
-                                            __lnprob__, pool=pool,
-                                            backend=backend, kwargs=kwargs)
+            sampler = emcee.EnsembleSampler(nwalkers, self.mcmcdim, __lnprob__, pool=pool, backend=backend,
+                                            kwargs=kwargs)
 
             # initiate the walkers
-            p0 = [(1 + init_frac * np.random.rand(self.mcmcdim)) *
-                  self.mcmcpar for walker in range(nwalkers)]
+            p0 = [(1 + init_frac * np.random.rand(self.mcmcdim)) * self.mcmcpar for _walker in range(nwalkers)]
 
             # run the mcmc chain
             sampler.run_mcmc(p0, nsteps, progress=True)
@@ -416,12 +418,8 @@ class QubeFit(Qube):
             self.mcmcarray = file['mcmc']['chain'][()]
             self.mcmclnprob = file['mcmc']['log_prob'][()]
         else:
-            try:
-                self.mcmcarray
-                self.mcmclnprob
-            except AttributeError:
-                raise AttributeError('get_chainresults: mcmcarray or ' +
-                                     'mcmclnprob are not defined')
+            if 'mcmcarray' not in self.keys() or 'mcmclnprob' not in self.keys():
+                raise AttributeError('get_chainresults: mcmcarray and/or mcmclnprob is not defined')
 
         # get the burnin value below which to ditch the data
         burninvalue = int(np.ceil(self.mcmcarray.shape[0] * burnin))
@@ -432,53 +430,51 @@ class QubeFit(Qube):
         perc = (1 / 2 + 1 / 2 * erf(np.arange(-3, 4, 1) / np.sqrt(2))) * 100
 
         # find the index with the highest probability
-        BestValIdx = np.unravel_index(self.mcmclnprob.argmax(),
-                                      self.mcmclnprob.shape)
+        best_val_idx = np.unravel_index(self.mcmclnprob.argmax(),
+                                        self.mcmclnprob.shape)
 
         # create the output parameters from the initial parameter conversions.
-        par, MedArr, BestArr = {}, {}, {}
+        par, med_arr, best_arr = {}, {}, {}
         for key in self.initpar.keys():
 
             # get the intrinsic units of the parameters
             if self.initpar[key]['Conversion'] is not None:
-                Unit = (self.initpar[key]['Unit'] /
-                        self.initpar[key]['Conversion'].unit)
+                unit = self.initpar[key]['Unit'] / self.initpar[key]['Conversion'].unit
             else:
-                Unit = self.initpar[key]['Unit']
+                unit = self.initpar[key]['Unit']
 
             # now calculate median, etc. only if it was not held fixed
             if not self.initpar[key]['Fixed']:
                 idx = self.mcmcmap.index(key)
-                Values = np.percentile(self.mcmcarray[:, :, idx], perc) * Unit
-                MedArr.update({key: Values[3].value})
-                BestValue = self.mcmcarray[BestValIdx[0], BestValIdx[1],
-                                           idx] * Unit
-                BestArr.update({key: BestValue.value})
+                values = np.percentile(self.mcmcarray[:, :, idx], perc) * unit
+                med_arr.update({key: values[3].value})
+                best_value = self.mcmcarray[best_val_idx[0], best_val_idx[1], idx] * unit
+                best_arr.update({key: best_value.value})
                 if self.initpar[key]['Conversion'] is not None:
-                    Values = Values * self.initpar[key]['Conversion']
-                    BestValue = BestValue * self.initpar[key]['Conversion']
+                    values = values * self.initpar[key]['Conversion']
+                    best_value = best_value * self.initpar[key]['Conversion']
             else:
-                Values = (np.array([0, 0, 0, self.initpar[key]['Value'],
+                values = (np.array([0, 0, 0, self.initpar[key]['Value'],
                                     0, 0, 0]) *
                           self.initpar[key]['Unit'])
-                BestValue = (self.initpar[key]['Value'] *
-                             self.initpar[key]['Unit'])
+                best_value = (self.initpar[key]['Value'] *
+                              self.initpar[key]['Unit'])
 
-            par.update({key: {'Median': Values[3].value,
-                              '1Sigma': [Values[2].value, Values[4].value],
-                              '2Sigma': [Values[1].value, Values[5].value],
-                              '3Sigma': [Values[0].value, Values[6].value],
-                              'Best': BestValue.value, 'Unit': Values[0].unit,
+            par.update({key: {'Median': values[3].value,
+                              '1Sigma': [values[2].value, values[4].value],
+                              '2Sigma': [values[1].value, values[5].value],
+                              '3Sigma': [values[0].value, values[6].value],
+                              'Best': best_value.value, 'Unit': values[0].unit,
                               'Conversion': self.initpar[key]['Conversion']}})
-        par.update({'MedianArray': MedArr, 'BestArray': BestArr})
+        par.update({'MedianArray': med_arr, 'BestArray': best_arr})
         self.chainpar = par
 
         # reload the model with the median or best array
         if reload_model:
             if load_best:
-                self.update_parameters(BestArr)
+                self.update_parameters(best_arr)
             else:
-                self.update_parameters(MedArr)
+                self.update_parameters(med_arr)
             self.create_model()
 
     def update_parameters(self, parameters):
@@ -534,32 +530,43 @@ class QubeFit(Qube):
         chisq : FLOAT
             The (reduced) chi-square statistic of the model within the mask.
         """
-        # generate a bootstraparray (if needed)
+        # check to see if a mask is defined
         if not hasattr(self, 'maskarray'):
-            raise AttributeError('Need to define a mask for calculating the' +
-                                 'likelihood function')
-
+            raise AttributeError('Need to define a mask for calculating the likelihood function')
         # get the residual and variance
-        residual = self.data - self.model
+        residual = self.residual
         variance = self.variance
         residualsample = residual[np.where(self.maskarray)]
         variancesample = variance[np.where(self.maskarray)]
-
         # calculate the chi-squared value
         chisq = np.sum(np.square(residualsample) / variancesample)
         if adjust_for_kernel:
-            Nyquist = self.kernelarea * np.log(2) / np.pi
-            chisq = chisq / Nyquist
-
+            chisq = chisq / (self.kernelarea * np.log(2) / np.pi)
         if reduced:
             if adjust_for_kernel:
-                IndSamples = len(residualsample) / Nyquist
+                indep_samples = len(residualsample) / (self.kernelarea * np.log(2) / np.pi)
             else:
-                IndSamples = len(residualsample)
-            dof = IndSamples - len(self.mcmcpar)
+                indep_samples = len(residualsample)
+            dof = indep_samples - len(self.mcmcpar)
             chisq = chisq / dof
-
         return chisq
+
+    def calculate_ksprobability(self):
+        """
+        Calculate the Kolmogorov-Smirnov probability of the model
+        """
+        # check to see if a mask is defined
+        if not hasattr(self, 'maskarray'):
+            raise AttributeError('Need to define a mask for calculating the likelihood function')
+        # get the residual and variance
+        residual = self.residual
+        residualsample = residual[np.where(self.maskarray)]
+        # calculate the ks probability using kstest of scipy.stats
+        scale = np.median(np.sqrt(self.variance))
+        sigmadist_theo = norm(scale=scale)
+        residualsample = residualsample - np.mean(residualsample)
+        prob = kstest(residualsample, sigmadist_theo.cdf)[1]
+        return prob
 
     def create_maskarray(self, sampling=2., bootstrapsamples=200,
                          regular=None, sigma=None, nblobs=1, fmaskgrow=0.01):
@@ -623,35 +630,22 @@ class QubeFit(Qube):
         None : NoneType
         """
         method = self.probmethod
-
         # bootstrap array
         if method == 'BootKS' or method == 'BootChiSq':
-
             # create the mask array
-            size = (int(sampling * self.data.size / self.kernelarea),
-                    bootstrapsamples)
+            size = (int(sampling * self.data.size / self.kernelarea), bootstrapsamples)
             self.maskarray = np.random.randint(self.data.size, size=size)
-
         # regular array
         elif method == 'KS' or method == 'ChiSq' or method == 'RedChiSq':
-
             # masks are cumulative / multiplicative
             self.maskarray = np.ones_like(self.data)
-
             if regular is not None:
-                self.maskarray *= __get_regulargrid__(self.data.shape,
-                                                      self.kernelarea,
-                                                      sampling, regular)
+                self.maskarray *= __get_regulargrid__(self.data.shape, self.kernelarea, sampling, regular)
             if sigma is not None:
-                self.maskarray *= __get_sigmamask__(self.data,
-                                                    self.variance,
-                                                    self.kernel,
-                                                    sigma, nblobs, fmaskgrow)
-
+                self.maskarray *= __get_sigmamask__(self.data, self.variance, self.kernel, sigma, nblobs, fmaskgrow)
         # not defined method
         else:
-            raise ValueError('qubefit: Probability method is not defined: ' +
-                             '{}'.format(method))
+            raise ValueError('qubefit: Probability method is not defined: {}'.format(method))
 
     def __calculate_loglikelihood__(self):
         """
@@ -662,15 +656,11 @@ class QubeFit(Qube):
         """
         # generate a mask array (if not defined)
         if not hasattr(self, 'maskarray'):
-            raise ValueError('Need to define a mask for calculating the' +
-                             'likelihood function')
-
+            raise ValueError('Need to define a mask for calculating the likelihood function')
         # get the dictionary needed to get the probability
         kwargs = self.__define_kwargs__()
-
         # calculate the probability with __ln_prob__()
         lnlike = __lnprob__(self.mcmcpar,  **kwargs)
-
         return lnlike
 
     def __define_kwargs__(self):
@@ -682,21 +672,16 @@ class QubeFit(Qube):
         extra step is necessary because the multithreading capability of
         emcee cannot handle the original structure.
         """
-        mkeys = ['modelname', 'intensityprofile',
-                 'velocityprofile', 'dispersionprofile']
-
-        MString = {}
+        mkeys = ['modelname', 'intensityprofile', 'velocityprofile', 'dispersionprofile']
+        m_string = {}
         for mkey in mkeys:
-            MString[mkey] = getattr(self, mkey, None)
-        kwargs = {'mstring': MString}
-
-        akeys = ['mcmcmap', 'par', 'shape', 'data', 'kernel',
-                 'variance', 'maskarray', 'initpar', 'probmethod',
+            m_string[mkey] = getattr(self, mkey, None)
+        kwargs = {'mstring': m_string}
+        akeys = ['mcmcmap', 'par', 'shape', 'data', 'kernel', 'variance', 'maskarray', 'initpar', 'probmethod',
                  'kernelarea']
         for akey in akeys:
             kwargs[akey] = getattr(self, akey, None)
         kwargs['convolve'] = True
-
         return kwargs
 
 
@@ -721,22 +706,17 @@ def __lnprob__(parameters, **kwargs):
     """
     # log of the priors
     lnprior = __get_priorlnprob__(parameters, **kwargs)
-
     if not np.isfinite(lnprior):
         return lnprior
     else:
         # update the parameters according to the predefined map
         __update_parameters__(parameters, **kwargs)
-
         # create a model for the cube
         model = __create_model__(**kwargs)
-
         # calculate the residual
         residual = kwargs['data'] - model
-
         # calculate the probability
         lnprob = __get_lnprob__(residual, **kwargs)
-
         return lnprob
 
 
@@ -750,19 +730,15 @@ def __get_priorlnprob__(parameters, **kwargs):
     lnprior = []
     for parameter, key in zip(parameters, kwargs['mcmcmap']):
         if kwargs['initpar'][key]['Conversion'] is not None:
-            Loc = (kwargs['initpar'][key]['Dloc'] *
-                   kwargs['initpar'][key]['Unit'] /
+            loc = (kwargs['initpar'][key]['Dloc'] * kwargs['initpar'][key]['Unit'] /
                    kwargs['initpar'][key]['Conversion']).value
-            Scale = (kwargs['initpar'][key]['Dscale'] *
-                     kwargs['initpar'][key]['Unit'] /
+            scale = (kwargs['initpar'][key]['Dscale'] * kwargs['initpar'][key]['Unit'] /
                      kwargs['initpar'][key]['Conversion']).value
         else:
-            Loc = kwargs['initpar'][key]['Dloc']
-            Scale = kwargs['initpar'][key]['Dscale']
+            loc = kwargs['initpar'][key]['Dloc']
+            scale = kwargs['initpar'][key]['Dscale']
 
-        lnprior.append(eval(kwargs['initpar'][key]['Dist']).logpdf(parameter,
-                       loc=Loc, scale=Scale))
-
+        lnprior.append(eval(kwargs['initpar'][key]['Dist']).logpdf(parameter, loc=loc, scale=scale))
     return np.sum(lnprior)
 
 
@@ -790,39 +766,32 @@ def __get_lnprob__(residual, **kwargs):
     -0.5 * ChiSquared / Nyquist, where Nyquist = kernelarea / (4 / ln(2))
     """
     # the bootstrap methods
-    Boot = (kwargs['probmethod'] == 'BootKS' or
-            kwargs['probmethod'] == 'BootChiSq')
-    if Boot:
-        PArr = []
+    if kwargs['probmethod'] == 'BootKS' or kwargs['probmethod'] == 'BootChiSq':
+        p_arr = []
         for bootstrap in np.arange(kwargs['maskarray'].shape[1]):
-
             # get indices
             indices = kwargs['maskarray'][:, bootstrap]
             residualsample = residual.flatten()[indices]
-
             if kwargs['probmethod'] == 'BootKS':
                 scale = np.median(np.sqrt(kwargs['variance']))
                 sigmadist_theo = norm(scale=scale)
                 residualsample = residualsample - np.mean(residualsample)
                 prob = kstest(residualsample, sigmadist_theo.cdf)[1]
                 if prob <= 0.:
-                    PArr.append(-np.inf)
+                    p_arr.append(-np.inf)
                 else:
-                    PArr.append(np.log(prob))
+                    p_arr.append(np.log(prob))
             elif kwargs['probmethod'] == 'BootChiSq':
                 variancesample = kwargs['variance'].flatten()[indices]
                 chisq = np.sum(np.square(residualsample) / variancesample)
-                PArr.append(-0.5 * chisq)
+                p_arr.append(-0.5 * chisq)
             else:
                 raise ValueError('Bootstrap method not defined.')
-
         # return the median log-probability
-        return np.median(PArr)
-
+        return np.median(p_arr)
     else:
         residualsample = residual[np.where(kwargs['maskarray'])]
         variancesample = kwargs['variance'][np.where(kwargs['maskarray'])]
-
         if kwargs['probmethod'] == 'KS':
             scale = np.median(np.sqrt(variancesample))
             sigmadist_theo = norm(scale=scale)
@@ -836,11 +805,10 @@ def __get_lnprob__(residual, **kwargs):
             # chisq = np.sum(np.square(residualsample) / variancesample)
             chisq = np.sum(np.square(residualsample) / variancesample +
                            np.log(2 * np.pi * variancesample))
-            Nyquist = kwargs['kernelarea'] * np.log(2) / 4
-            lnprob = -0.5 * chisq / Nyquist
+            nyquist = kwargs['kernelarea'] * np.log(2) / 4
+            lnprob = -0.5 * chisq / nyquist
         else:
             raise ValueError('Probability method not defined.')
-
         return lnprob
 
 
@@ -867,7 +835,6 @@ def __create_model__(**kwargs):
     """
     modeln = kwargs['mstring']['modelname']
     model = eval(modeln)(**kwargs)
-
     return model
 
 
@@ -881,23 +848,20 @@ def __get_regulargrid__(shape, kernelarea, sampling, center):
     """
     # approximate scalelength for the points in pixels
     r = np.sqrt(kernelarea * 4 * np.log(2) / np.pi) / sampling
-
     # xarray
     tx = np.zeros(shape[2])
     xidx = np.arange(center[0] - r * shape[2], center[0] + r * shape[2], r)
     xidx = xidx[(xidx > 0) & (xidx < shape[2])].astype(int)
     tx[xidx] = 1
     x = np.tile(tx[np.newaxis, np.newaxis, :], (shape[0], shape[1], 1))
-
     # yarray
     ty = np.zeros(shape[1])
     yidx = np.arange(center[1] - r * shape[1], center[1] + r * shape[1], r)
     yidx = yidx[(yidx > 0) & (yidx < shape[1])].astype(int)
     ty[yidx] = 1
     y = np.tile(ty[np.newaxis, :, np.newaxis], (shape[0], 1, shape[2]))
-
+    # final mask
     mask = x * y
-
     return mask
 
 
@@ -913,15 +877,12 @@ def __get_sigmamask__(data, variance, kernel, sigma, nblobs, fmaskgrow):
     lab = measure.label(data > sigma * np.sqrt(variance))
     bins = np.bincount(lab.flatten())
     args = np.argsort(bins)[::-1][1:1+nblobs]
-
     # add the blobs to the mask
     mask = np.zeros_like(data)
     for arg in args:
         mask[np.where(lab == arg)] = 1
-
     # grow the mask
     if fmaskgrow != 1:
         mask = convolve(mask, kernel)
         mask = np.where(mask < fmaskgrow, 0, 1)
-
     return mask

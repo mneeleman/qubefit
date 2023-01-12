@@ -426,7 +426,7 @@ def ThinSpiral(**kwargs):
     return Model
 
 
-# THE FOLLOWING PROFILES HAVE NOT BEEN TESTED AND HAVE SOME BUGS IN THEM
+# THE FOLLOWING PROFILES HAVE NOT BEEN TESTED AND LIKELY HAVE SOME BUGS IN THEM
 def warped_disk(**kwargs):
 
     # get coordinates in the plane of the sky (prime) and disk (non-prime).
