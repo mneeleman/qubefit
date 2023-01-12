@@ -666,8 +666,6 @@ def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, 
     if radius is None:
         int_pos = np.rint(pos).astype(int)
         snu = qube.data[:, int_pos[1], int_pos[0]]
-        nu = qube.get_velocity(convention='frequency')
-        dnu = qube.get_velocitywidth(convention='frequency')
         v = qube.get_velocity()
         dv = qube.get_velocitywidth()
     else:
@@ -677,8 +675,6 @@ def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, 
         sigma *= np.sqrt(np.pi * radius**2 / beamarea)
         snu, v = qube_masked.get_spec1d(**kwargs)
         dv = qube_masked.get_velocitywidth()
-        nu = qube_masked.get_velocity(convention='frequency')
-        dnu = qube_masked.get_velocitywidth(convention='frequency')
     # Gaussian fit of the spectrum
     gausspar = [np.max(snu), v[np.where(snu == np.max(snu))[0]], 100]
     g_init = models.Gaussian1D(amplitude=gausspar[0], mean=gausspar[1], stddev=gausspar[2])
@@ -697,7 +693,6 @@ def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, 
     hig_idx = np.where((v > mean - fwhm) & (v < mean + fwhm) & (snu > np.max(snu) - sigma))
     amp_obs = np.mean(snu[hig_idx])
     fwhm_obs = __get_obsfwhm__(snu, dv, amp_obs)
-    dfwhm_obs = __get_obsfwhm__(snu, dv, amp_obs - damp) - __get_obsfwhm__(snu, dv, amp_obs + damp)
     linedict = {'fitted': {'amp': amp, 'damp': damp,
                            'mean': mean, 'dmean': dmean,
                            'fwhm': fwhm, 'dfwhm': dfwhm,
