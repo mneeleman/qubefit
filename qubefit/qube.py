@@ -961,6 +961,8 @@ class Qube(object):
         ratio. This can be used as a quick seach algorithm or as a way to
         show both narrow and wide emission features at the same time.
         """
+        mom0 = copy.deepcopy(self)
+        
         # create a slew of moment-0 images
         VelArr = self.get_velocity()
         DV = self.get_velocitywidth()
@@ -995,8 +997,13 @@ class Qube(object):
                 Mom0[i, j] = fMom0[SNRargmax[i, j], i, j]
                 VelStart[i, j] = VelArr[ChanLE[SNRargmax[i, j]]]
                 VelEnd[i, j] = VelArr[ChanRE[SNRargmax[i, j]]]
+        mom0.data = Mom0
+                
+        # fix the header and update beam
+        mom0.__fix_header__()
+        mom0.__fix_beam__()
 
-        return Mom0, SNRmax, VelStart, VelEnd
+        return mom0, SNRmax, VelStart, VelEnd
 
     def _bootstrap_sigma_(self, mask, nboot=500, asymmetric=False,
                           gaussian=True, **kwargs):

@@ -16,6 +16,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 from astropy.wcs import WCS
 from astropy.modeling import models, fitting
+from astropy.stats import sigma_clip
 
 
 def standardfig(raster=None, contour=None, rasterselect='data', contourselect='data', newplot=False, ax=None, fig=None,
@@ -380,7 +381,7 @@ def make_4panelfigure(raster=None, contour=None, label=None, cont_in_ujy=False, 
                     cbar=cbar[idx], cbaraxis=cax, cbarticks=cbarticks[idx], clevels=clevels[idx], flip=flip, **kwargs)
     # Figure text
     text = {'cont': r'Continuum flux density (Jy beam$^{-1}$)',
-            'mom0': r'Integrated [CII] flux (Jy km s$^{-1}$ beam$^{-1}$)',
+            'mom0': r'Integrated line flux (Jy km s$^{-1}$ beam$^{-1}$)',
             'mom1': r'Mean velocity (km s$^{-1}$)',
             'mom2': r'Velocity dispersion (km s$^{-1}$)',
             'cust': custtext}
@@ -610,12 +611,19 @@ def diagnostic_plots(qf_object, chainfile=None, burnin=0.3, mcmcburnin=0.0, load
 
 
 def get_moments(qf_object, channels, mask_rms=3, quick=False, mom0_rms=None, use_model=False, mask=None,
-                return_mask=False):
-    # moment-0
+                size=None, center=None, return_mask=False):
+    if center is None:
+        center = [qf_object.data.shape[2] // 2, qf_object.data.shape[1] // 2]
+    # full moment-0
     mom0 = qf_object.calculate_moment(moment=0, channels=channels, use_model=use_model)
     if mom0_rms is None:
         mom0_rms = mom0.calculate_sigma()
     mom0.header['rms'] = mom0_rms
+    if size is not None:
+        qf_object = qf_object.get_slice(xindex=(center[0] - size, center[0] + size + 1),
+                                        yindex=(center[1] - size, center[1] + size + 1))
+        mom0 = mom0.get_slice(xindex=(center[0] - size, center[0] + size + 1),
+                              yindex=(center[1] - size, center[1] + size + 1))
     if mask is None:
         mask = mom0.mask_region(value=mom0_rms * mask_rms, applymask=False)
     qf_object_masked = qf_object.mask_region(value=0.0)
@@ -646,15 +654,16 @@ def get_beam(qube, ax, loc='lower left', pad=0.3, borderpad=0.4, frameon=True, c
     return beam
 
 
-def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, **kwargs):
+def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, guessmean=None, pbcor=1.,
+                       cont_correct=False, lim=None, **kwargs):
     # calculate sigma
     bmaj = qube.beam['BMAJ'] / np.sqrt(8 * np.log(2)) / np.abs(qube.header['CDELT1'])
     bmin = qube.beam['BMIN'] / np.sqrt(8 * np.log(2)) / np.abs(qube.header['CDELT1'])
     beamarea = bmaj * bmin * 2 * np.pi
     if sig is None:
-        sigma = qube.calculate_sigma()
+        sigmapb = qube.calculate_sigma() * pbcor
     else:
-        sigma = sig
+        sigmapb = sig * pbcor
     # get xy coordinates in pixels
     if type(pos) is str:
         wcs = WCS(qube.header)
@@ -667,47 +676,61 @@ def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, 
         int_pos = np.rint(pos).astype(int)
         snu = qube.data[:, int_pos[1], int_pos[0]]
         v = qube.get_velocity()
+        if cont_correct:
+            snu = __correct_flux__(snu, v, lim)
         dv = qube.get_velocitywidth()
     else:
         if radius_in_arcsec:
-            radius /= np.abs(qube.header['CDELT1'] * 3600)
-        qube_masked = qube.mask_region(ellipse=[pos[0], pos[1], radius, radius, 0])
-        sigma *= np.sqrt(np.pi * radius**2 / beamarea)
-        snu, v = qube_masked.get_spec1d(**kwargs)
+            rad = radius / np.abs(qube.header['CDELT1'] * 3600)
+        else:
+            rad = radius
+        qube_masked = qube.mask_region(ellipse=[pos[0], pos[1], rad, rad, 0])
+        sigmapb *= np.sqrt(np.pi * rad**2 / beamarea)
+        snu, v = qube_masked.get_spec1d(continuum_correct=cont_correct, limits=lim, **kwargs)
         dv = qube_masked.get_velocitywidth()
+    snupb = snu * pbcor
     # Gaussian fit of the spectrum
-    gausspar = [np.max(snu), v[np.where(snu == np.max(snu))[0]], 100]
+    if guessmean is None:
+        guessmean = v[np.median(np.where(snupb > 2 * sigmapb)).astype(int)]
+    gausspar = [snupb[np.where(np.abs(v - guessmean) < dv / 2)[0]], guessmean, 100]
     g_init = models.Gaussian1D(amplitude=gausspar[0], mean=gausspar[1], stddev=gausspar[2])
     fit_g = fitting.LevMarLSQFitter()
-    g = fit_g(g_init, v, snu)
-    fwhm, mean, amp = np.sqrt(8 * np.log(2)) * g.stddev.value, g.mean.value, g.amplitude.value
+    g = fit_g(g_init, v, snupb)
+    fwhm, mean_v, amp = np.sqrt(8 * np.log(2)) * g.stddev.value, g.mean.value, g.amplitude.value
+    mean_nu = qube.header['restfrq'] * (1 - mean_v / 299792.458)
     snudv = 1.065 * fwhm * amp
     # calculate Gaussian fit uncertainties (Lenz & Ayres 1992, PSAP, 104, 1104)
-    idx = np.where(np.abs(v-mean) < dv / 2)[0]
-    factor = np.sqrt(fwhm / dv) * (amp / float(sigma[idx]))
-    dfwhm, dmean, damp = fwhm / (0.60 * factor), fwhm / (1.47 * factor), amp / (0.70 * factor)
+    idx = np.where(np.abs(v - mean_v) < 5 * dv)
+    meansigmapb = np.nanmean(sigmapb[idx])
+    factor = np.sqrt(fwhm / dv) * (amp / meansigmapb)
+    dfwhm, dmean_v, damp = fwhm / (0.60 * factor), fwhm / (1.47 * factor), amp / (0.70 * factor)
+    dmean_nu = qube.header['restfrq'] / 299792.458 * dmean_v
     dsnudv = snudv / (0.70 * factor)
-    # calculate the observed properties
-    full_idx = np.where((v > mean - fwhm) & (v < mean + fwhm))
-    opt_idx = np.where((v > mean - 0.6 * fwhm) & (v < mean + 0.6 * fwhm))
-    hig_idx = np.where((v > mean - fwhm) & (v < mean + fwhm) & (snu > np.max(snu) - sigma))
-    amp_obs = np.mean(snu[hig_idx])
-    fwhm_obs = __get_obsfwhm__(snu, dv, amp_obs)
+    # calculate the observed properties (relies on the Gaussian fit for initial estimates).
+    full_idx = np.where((v > mean_v - fwhm) & (v < mean_v + fwhm))
+    opt_idx = np.where((v > mean_v - 0.6 * fwhm) & (v < mean_v + 0.6 * fwhm))
+    hig_idx = np.where((v > mean_v - fwhm) & (v < mean_v + fwhm) & (snupb > amp - sigmapb))
+    amp_obs = np.mean(snupb[hig_idx])
+    fwhm_obs = __get_obsfwhm__(snupb, dv, amp_obs)
     linedict = {'fitted': {'amp': amp, 'damp': damp,
-                           'mean': mean, 'dmean': dmean,
+                           'mean_v': mean_v, 'dmean_v': dmean_v,
+                           'mean_nu': mean_nu, 'dmean_nu': dmean_nu,
                            'fwhm': fwhm, 'dfwhm': dfwhm,
                            'snudv': snudv, 'dsnudv': dsnudv,
                            'snr': snudv / dsnudv},
-                'observed': {'amp': np.mean(snu[hig_idx]),
-                             'damp': np.sqrt(np.sum(np.square(sigma[hig_idx]))) / sigma[hig_idx].size,
-                             'mean': np.sum(v[full_idx] * snu[full_idx]) / np.sum(snu[full_idx]),
-                             'dmean': fwhm_obs / (1.47 * factor),
+                'observed': {'amp': np.mean(snupb[hig_idx], dtype=np.float64),
+                             'damp': np.sqrt(np.sum(np.square(sigmapb[hig_idx]))) / sigmapb[hig_idx].size,
+                             'mean_v': np.sum(v[full_idx] * snupb[full_idx]) / np.sum(snupb[full_idx]),
+                             'dmean_v': fwhm_obs / (1.47 * factor),
+                             'mean_nu': (qube.header['restfrq'] *
+                                         (1 - np.sum(v[full_idx] * snupb[full_idx]) / np.sum(snupb[full_idx]) / 299792.458)),
+                             'dmean_nu': qube.header['restfrq'] / 299792.458 * fwhm_obs / (1.47 * factor),
                              'fwhm': fwhm_obs,
                              'dfwhm': fwhm_obs / (0.60 * factor),
-                             'snudv': np.sum(snu[full_idx]) * dv,
-                             'dsnudv': np.sqrt(np.sum(np.square(sigma[full_idx]))) * dv,
-                             'snr': np.sum(snu[full_idx]) / np.sqrt(np.sum(np.square(sigma[full_idx]))),
-                             'snr_opt': np.sum(snu[opt_idx]) / np.sqrt(np.sum(np.square(sigma[opt_idx])))}}
+                             'snudv': np.sum(snupb[full_idx]) * dv,
+                             'dsnudv': np.sqrt(np.sum(np.square(sigmapb[full_idx]))) * dv,
+                             'snr': np.sum(snupb[full_idx]) / np.sqrt(np.sum(np.square(sigmapb[full_idx]))),
+                             'snr_opt': np.sum(snupb[opt_idx]) / np.sqrt(np.sum(np.square(sigmapb[opt_idx])))}}
     return linedict
 
 
@@ -776,7 +799,7 @@ def __fig_properties__():
     font = {'family': 'DejaVu Sans', 'weight': 'normal',
             'size': 10}
     mpl.rc('font', **font)
-    mpl.rc('mathtext', fontset='stixsans')
+    mpl.rc('mathtext', fontset='dejavusans')
     mpl.rc('axes', lw=1)
     mpl.rc('xtick.major', size=4, width=1)
     mpl.rc('ytick.major', size=4, width=1)
@@ -804,3 +827,24 @@ def __get_obsfwhm__(snu, dv, amp):
                 y += 1
             count = max(count, y - x)
     return count * dv
+
+
+def __correct_flux__(flux, vel, limits):
+    """
+    Correct the flux for continuum wiggles.
+
+    This will fit the spectrum for a potential continuum residual or
+    wiggles. The fitting function of the continuum is a second order
+    polynomial. The fit will ignore the region within the limits.
+    """
+    # fit the spectrum for potential continuum residual
+    # (second order polynomial)
+
+    finit = models.Polynomial1D(2, c0=0, c1=0, c2=0)
+    fitter = fitting.LevMarLSQFitter()
+    ofitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=3,
+                                                sigma=3.0)
+    FitIdx = (vel < limits[0]) + (vel > limits[1])
+    OFit, OFitData = ofitter(finit, vel[FitIdx], flux[FitIdx])
+
+    return flux - OFit(vel)

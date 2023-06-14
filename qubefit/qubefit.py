@@ -418,7 +418,7 @@ class QubeFit(Qube):
             self.mcmcarray = file['mcmc']['chain'][()]
             self.mcmclnprob = file['mcmc']['log_prob'][()]
         else:
-            if 'mcmcarray' not in self.keys() or 'mcmclnprob' not in self.keys():
+            if self.mcmcarray is None or self.mcmclnprob is None:
                 raise AttributeError('get_chainresults: mcmcarray and/or mcmclnprob is not defined')
 
         # get the burnin value below which to ditch the data
