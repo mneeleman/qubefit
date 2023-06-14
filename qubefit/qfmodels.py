@@ -75,42 +75,33 @@ def ThinDisk(**kwargs):
     RPrime, PhiPrime, R, Phi = __get_coordinates__(twoD=True, **kwargs)
 
     # get radial, velocity, and dispersion maps (2D in plane of the sky)
-    if True:
-        if 'IIdx' in kwargs['par'].keys():
-            IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-                    (R, kwargs['par']['Rd'], kwargs['par']['IIdx']) *
-                    kwargs['par']['I0'])
-        else:
-            IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
-                    (R, kwargs['par']['Rd']) * kwargs['par']['I0'])
-            if 'VIdx' in kwargs['par'].keys():
-                VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
-                             '_')(R, kwargs['par']['Rv'], kwargs['par']
-                                  ['VIdx']) * kwargs['par']['Vmax'])
-            else:
-                VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
-                             '_')(R, kwargs['par']['Rv']) *
-                        kwargs['par']['Vmax'])
-        # note that VMap is based on the "sky angle" (Phi)
-        VMap = __get_centralvelocity__(PhiPrime, VDep, **kwargs)
-        DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
-                (R, kwargs['par']['Rv']) * kwargs['par']['Disp'])
-
-        # convert these maps into 3d arrays
-        ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
-        VCube = np.tile(VMap, (kwargs['shape'][-3], 1, 1))
-        DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
-
-        # create velocity array (in pixel units)
-        ZCube = np.indices(kwargs['shape'])[0]
+    if 'IIdx' in kwargs['par'].keys():
+        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                (R, kwargs['par']['Rd'], kwargs['par']['IIdx']) *
+                kwargs['par']['I0'])
     else:
-        profile = kwargs['mstring']['intensityprofile']
-        IArray = __getarray__(profile=profile, CP=[RPrime, None, None],
-                              C1P=None, C2P=None, C3P=None,
-                              scale=[None, None, None],
-                              sidx=[None, None, None],
-                              separable=True, **kwargs)
-        print(IArray)
+        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                (R, kwargs['par']['Rd']) * kwargs['par']['I0'])
+    if 'VIdx' in kwargs['par'].keys():
+        VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
+                     '_')(R, kwargs['par']['Rv'], kwargs['par']
+                          ['VIdx']) * kwargs['par']['Vmax'])
+    else:
+        VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
+                     '_')(R, kwargs['par']['Rv']) *
+                kwargs['par']['Vmax'])
+    # note that VMap is based on the "sky angle" (Phi)
+    VMap = __get_centralvelocity__(PhiPrime, VDep, **kwargs)
+    DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
+            (R, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+
+    # convert these maps into 3d arrays
+    ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
+    VCube = np.tile(VMap, (kwargs['shape'][-3], 1, 1))
+    DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
+
+    # create velocity array (in pixel units)
+    ZCube = np.indices(kwargs['shape'])[0]
 
     # create the model
     Model = (ICube * np.exp(-1 * (ZCube - VCube)**2 / (2 * DCube**2)))
@@ -189,8 +180,8 @@ def DispersionBulge(**kwargs):
     else:
         IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
                 (RPrime, kwargs['par']['Rd']) * kwargs['par']['I0'])
-        DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
-                (RPrime, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+    DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
+            (RPrime, kwargs['par']['Rv']) * kwargs['par']['Disp'])
 
     # convert these maps into 3d matrices
     ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
@@ -435,7 +426,42 @@ def ThinSpiral(**kwargs):
     return Model
 
 
-# THE FOLLOWING PROFILES HAVE NOT BEEN TESTED AND HAVE SOME BUGS IN THEM
+# THE FOLLOWING PROFILES HAVE NOT BEEN TESTED AND LIKELY HAVE SOME BUGS IN THEM
+def warped_disk(**kwargs):
+
+    # get coordinates in the plane of the sky (prime) and disk (non-prime).
+    r_prime, phi_prime, r, phi, pa, incl = __get_2darrays__((kwargs['shape'][-1], kwargs['shape'][-2]),
+                                                             kwargs['par']['Xcen'], kwargs['par']['Ycen'],
+                                                             kwargs['par']['PA0'], kwargs['par']['PA1'],
+                                                             kwargs['par']['Incl0'], kwargs['par']['Incl1'])
+
+    # get radial, velocity, and dispersion maps (2D in plane of the sky)
+    i_map = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+             (r, kwargs['par']['Rd']) * kwargs['par']['I0'])
+    v_dep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
+             (r, kwargs['par']['Rv']) * kwargs['par']['Vmax'])
+    v_map = __get_cvel__(phi_prime, v_dep, kwargs['par']['Vcen'], pa, incl)
+    d_map = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
+             (r, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+
+    # convert these maps into 3d arrays
+    i_cube = np.tile(i_map, (kwargs['shape'][-3], 1, 1))
+    v_cube = np.tile(v_map, (kwargs['shape'][-3], 1, 1))
+    d_cube = np.tile(d_map, (kwargs['shape'][-3], 1, 1))
+
+    # create velocity array (in pixel units)
+    z_cube = np.indices(kwargs['shape'])[0]
+
+    # create the model
+    model = (i_cube * np.exp(-1 * (z_cube - v_cube)**2 / (2 * d_cube**2)))
+
+    # Convolve
+    if kwargs['convolve']:
+        model = convolve(model, kwargs['kernel'])
+
+    return model
+
+
 def _ThickDisk(**kwargs):
     """
     Create a model of a thick disk.
@@ -716,7 +742,6 @@ def _SpiralGalaxy(Convolve=True, **kwargs):
 ##############################################################
 # Available profiles for Intensity, Velocity, and Dispersion #
 
-
 def _Exponential_(X, X0, *args):
 
     return np.exp(-1 * X / X0)
@@ -951,26 +976,94 @@ def __sudophi_array__(**kwargs):
     return phi
 
 
-def __getarray__(profile=None, CPrime=[None, None, None],
-                 scale=[None, None, None], sidx=[None, None, None],
-                 separable=True, **kwargs):
-
+def __getarray__(profile=None, cprime=(None, None, None),
+                 scale=(None, None, None), sidx=(None, None, None),
+                 separable=True):
+    array = CartesianRepresentation(np.array([]), unit=u.pix)
     if separable:
-        first = True
-        for idx, CP in enumerate(CPrime):
-            if CP is not None:
+        for idx, cp in enumerate(cprime):
+            if cp is not None:
                 if scale[idx] is None:
-                    raise ValueError('__getintensityarray__: Set the scale ' +
+                    raise ValueError('__getarray__: Set the scale ' +
                                      'for coordinate index-{}'.format(idx))
-                tArray = (eval('_' + profile[idx] + '_')
-                          (CP, scale[idx], sidx[idx]))
-                if first:
-                    Array = tArray
-                    first = False
-                else:
-                    Array *= tArray
+                tarray = (eval('_' + profile[idx] + '_')
+                          (cp, scale[idx], sidx[idx]))
+                array *= tarray
     else:
-        raise NotImplementedError('__getintensityarray__: Non separable ' +
+        raise NotImplementedError('__getarray__: Non separable ' +
                                   'profiles have not been implemented')
 
-    return Array
+    return array
+
+
+def __get_2darrays__(shape, x_center, y_center, pa0=0, pa1=0, incl0=0, incl1=0):
+
+    # initialize the array in the sky frame (non-primed)
+    indices = np.indices((shape[0], shape[1], 1), dtype=float)
+
+    # translate the array
+    indices[1] = indices[1] - x_center
+    indices[0] = indices[0] - y_center
+
+    # make a cartesian and polar representation (in the sky (primed) frame.
+    cartesian_prime = CartesianRepresentation([indices[1], indices[0], indices[2]], unit=u.pix)
+    polar_prime = CylindricalRepresentation.from_cartesian(cartesian_prime)
+
+    # do the differential rotation three times
+    # this will account for the dependence of pa on rho,
+    # this really need to be done inside a while loop to test for convergence
+    polar1, _pa, _incl = __rotatearray__(polar_prime, polar_prime, pa0=pa0, pa1=pa1,
+                                         incl0=incl0, incl1=incl1)
+    polar2, _pa, _incl = __rotatearray__(polar_prime, polar1, pa0=pa0, pa1=pa1,
+                                         incl0=incl0, incl1=incl1)
+    polar3, pa, incl = __rotatearray__(polar_prime, polar2, pa0=pa0, pa1=pa1,
+                                       incl0=incl0, incl1=incl1)
+
+    # now return the rho and phi arrays
+    rho_prime = polar_prime.rho[:, :, 0].value
+    phi_prime = polar_prime.phi[:, :, 0].value - np.pi / 2
+    phi_prime[phi_prime < 0] = phi_prime[phi_prime < 0] + 2 * np.pi
+    rho = polar3.rho[:, :, 0].value
+    phi = polar3.phi[:, :, 0].value - np.pi / 2
+    phi[phi < 0] = phi[phi < 0] + 2 * np.pi
+
+    return rho_prime, phi_prime, rho, phi, pa, incl
+
+
+def __rotatearray__(polar_prime, polar, pa0=0, pa1=0, incl0=0, incl1=0):
+
+    # define the PA and Incl for the full array
+    pa = __pa__(polar, pa0, pa1)
+    incl = __incl__(polar, incl0, incl1)
+
+    # now do the transformation into the frame of the galaxy
+    # note: pi / 2 comes from the change of PA (angle from positive y-axis)
+    # to angle from the positive x-axis
+    xprime = (-1 * polar_prime.rho.value *
+              np.sin(polar_prime.phi.value + np.pi / 2 - pa) / np.cos(incl))
+    yprime = polar_prime.rho.value * np.cos(polar_prime.phi.value + np.pi / 2 - pa)
+
+    # make a cartesian and polar representation
+    cartesian_prime = CartesianRepresentation((xprime, yprime, polar.z.value), unit=u.pix)
+    polar_prime = CylindricalRepresentation.from_cartesian(cartesian_prime)
+
+    return polar_prime, pa, incl
+
+
+def __pa__(polar, pa0, pa1):
+    return pa0 + pa1 * polar.rho[:, :, 0].value
+
+
+def __incl__(polar, incl0, incl1):
+    return incl0 + incl1 * polar.rho[:, :, 0].value
+
+
+def __get_cvel__(phi_prime, v_dep, v_cen, pa, incl):
+
+    """ This is a generalization of the central velocity calculation in __get_centralvelocity__,
+    in which the PA and Incl are 2D arrays that can vary.
+    """
+    v_sqrt = np.sqrt(1. + np.sin(phi_prime - pa)**2 * np.tan(incl)**2)
+    v_cen = (np.cos(phi_prime - pa) * np.sin(incl) * v_dep / v_sqrt) + v_cen
+
+    return v_cen
