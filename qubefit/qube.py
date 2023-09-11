@@ -55,20 +55,16 @@ class Qube(object):
         """
         # initiate (currently blank)
         self = cls(**kwargs)
-
         # Open the file
         hdu = fits.open(fitsfile)
         self.data = np.squeeze(hdu[extension].data)
         self.header = hdu[extension].header
         self.shape = self.data.shape
         self.__fix_header__()
-
         # adapt the header depending on the instrument and reduction software
         self.__instr_redux__()
-
         # add beam
         self.__add_beam__(hdu)
-
         return self
 
     def get_slice(self, xindex=None, yindex=None, zindex=None):
@@ -114,55 +110,49 @@ class Qube(object):
 
         """
         # init
-        Slice = copy.deepcopy(self)
-
+        data_slice = copy.deepcopy(self)
         # deal with unassigned indices and tuple values
         if xindex is None:
-            xindex = np.arange(Slice.data.shape[-1])
+            xindex = np.arange(data_slice.data.shape[-1])
         elif type(xindex) is tuple:
             xindex = np.arange(xindex[0], xindex[1])
         if yindex is None:
-            yindex = np.arange(Slice.data.shape[-2])
+            yindex = np.arange(data_slice.data.shape[-2])
         elif type(yindex) is tuple:
             yindex = np.arange(yindex[0], yindex[1])
         # third axis only if it exists
-        if Slice.data.ndim >= 3 and zindex is None:
-            zindex = np.arange(Slice.data.shape[-3])
+        if data_slice.data.ndim >= 3 and zindex is None:
+            zindex = np.arange(data_slice.data.shape[-3])
         elif type(zindex) is tuple:
             zindex = np.arange(zindex[0], zindex[1])
-
         # crop the data, model and sigma/variance cubes
         # NOTE: THE DATA COLUMN HAS TO BE PRESENT
         for attr in ['data', 'model', 'sig', 'variance']:
-            if hasattr(Slice, attr):
-                temp = getattr(Slice, attr)
+            if hasattr(data_slice, attr):
+                temp = getattr(data_slice, attr)
                 if temp.ndim == 2:
                     temp = temp[yindex[:, np.newaxis], xindex[np.newaxis, :]]
                     temp = np.squeeze(temp)
-                    setattr(Slice, attr, temp)
+                    setattr(data_slice, attr, temp)
                 elif temp.ndim == 3:
                     temp = temp[zindex[:, np.newaxis, np.newaxis],
                                 yindex[np.newaxis, :, np.newaxis],
                                 xindex[np.newaxis, np.newaxis, :]]
                     temp = np.squeeze(temp)
-                    setattr(Slice, attr, temp)
-                else:
-                    raise ValueError('Unable to crop data with this dimension')
-
+                    setattr(data_slice, attr, temp)
         # now fix the coordinates in the header
-        Slice.header['CRPIX1'] = Slice.header['CRPIX1'] - np.min(xindex)
-        Slice.header['CRPIX2'] = Slice.header['CRPIX2'] - np.min(yindex)
-        if Slice.data.ndim >= 3:
-            Slice.header['CRPIX3'] = Slice.header['CRPIX3'] - np.min(zindex)
-
+        data_slice.header['CRPIX1'] = data_slice.header['CRPIX1'] - np.min(xindex)
+        data_slice.header['CRPIX2'] = data_slice.header['CRPIX2'] - np.min(yindex)
+        if data_slice.data.ndim >= 3:
+            data_slice.header['CRPIX3'] = data_slice.header['CRPIX3'] - np.min(zindex)
         # adjust the header and beam
-        Slice.shape = Slice.data.shape
-        Slice.__fix_header__()
-        Slice.__fix_beam__(channels=zindex)
+        data_slice.shape = data_slice.data.shape
+        data_slice.__fix_header__()
+        data_slice.__fix_beam__(channels=zindex)
+        # return the data_slice
+        return data_slice
 
-        return Slice
-
-    def calculate_sigma(self, ignorezero=True, fullarray=False, channels=None,
+    def calculate_sigma(self, ignorezero=True, fullarray=False, channels=None, use_residual=False,
                         plot=False, plotfile='./sigma_estimate.pdf', **kwargs):
         """
         Calculate the Gaussian noise of the data.
@@ -216,83 +206,74 @@ class Qube(object):
         """
         # either 2D or 3D case
         if self.data.ndim == 2:
-
             # parse the data to be fitted
-            Data = self.data
+            if use_residual:
+                data = self.residual
+            else:
+                data = self.data
             if ignorezero:
-                Data = Data[np.where(Data != 0)]
-
+                data = data[np.where(data != 0)]
             # if qa plot is wanted
             if plot:
                 fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-                kwargs['ax'] = ax
-
+            else:
+                ax = None
             # fit the data
-            g = __fit_gaussian__(Data, **kwargs)
-
+            g = __fit_gaussian__(data, ax=ax, **kwargs)
             # save and close the plot
             if plot:
                 plt.savefig(plotfile, format='pdf', dpi=300)
                 plt.close('all')
-
             # get sigma
-            Sigma = g.stddev.value
-
+            sigma = g.stddev.value
         elif self.data.ndim == 3:
-
             # channels to loop over
             if channels is None:
                 channels = np.arange(0, self.data.shape[-3])
-
             # if qa plot is wanted
             if plot:
                 pdf = matplotlib.backends.backend_pdf.PdfPages(plotfile)
-
-            Sigma = []
+            sigma = []
             for channel in channels:
-                Data = self.data[channel, :, :]
-
+                if use_residual:
+                    data = self.residual[channel, :, :]
+                else:
+                    data = self.data[channel, :, :]
                 if ignorezero:
-                    Data = Data[np.where(Data != 0)]
-
+                    data = data[np.where(data != 0)]
                 if plot:
                     fig, ax = plt.subplots(1, 1, figsize=(6, 6))
                     kwargs['ax'] = ax
                     kwargs['channel'] = channel
-
                 # fit the data and get sigma
-                goodidx = np.where((Data != 0) * (np.isfinite(Data)))
+                goodidx = np.where((data != 0) * (np.isfinite(data)))
                 if goodidx != np.array([]):
-                    g = __fit_gaussian__(Data, **kwargs)
-                    Sigma.append(g.stddev.value)
+                    g = __fit_gaussian__(data, **kwargs)
+                    sigma.append(g.stddev.value)
                     if plot:
                         pdf.savefig(fig)
                         plt.close('all')
                 else:
-                    Sigma.append(0)
-
+                    sigma.append(0)
             # close the plot
             if plot:
                 pdf.close()
-
             # convert to numpy array
-            Sigma = np.array(Sigma)
+            sigma = np.array(sigma)
+        else:
+            raise ValueError('data dimensions need to be either 2D or 3D.')
 
         # convert sigma to a full array the size of the original data
         # and upgrade it to a full Qube
         if fullarray:
-
-            TSigma = copy.deepcopy(self)
-            if Sigma.shape != self.data.shape[-3]:
-                TSigma = self.get_slice(zindex=channels)
+            temp_sigma = copy.deepcopy(self)
+            if sigma.shape != self.data.shape[-3]:
+                temp_sigma = self.get_slice(zindex=channels)
             else:
-                TSigma = copy.deepcopy(self)
-            TSigma.data = np.tile(Sigma[:, np.newaxis, np.newaxis],
-                                  (1, self.data.shape[-2],
-                                   self.data.shape[-1]))
-            Sigma = TSigma
-
-        return Sigma
+                temp_sigma = copy.deepcopy(self)
+            temp_sigma.data = np.tile(sigma[:, np.newaxis, np.newaxis], (1, self.data.shape[-2], self.data.shape[-1]))
+            sigma = temp_sigma
+        return sigma
 
     def mask_region(self, ellipse=None, rectangle=None, value=None,
                     moment=None, channels=None, mask=None, applymask=True):
@@ -526,7 +507,7 @@ class Qube(object):
         return mom
 
     def gaussian_moment(self, mom1=None, mom2=None, channels=None,
-                        use_model=False, **kwargs):
+                        use_model=False, return_amp=False, **kwargs):
         """
         Calculate the Gaussian 'moments' of the cube.
 
@@ -588,6 +569,8 @@ class Qube(object):
             data = data.get_slice(zindex=channels)
 
         # the guesses:
+        if return_amp:
+            amp = data.calculate_moment(moment=0, use_model=use_model)
         if mom1 is None:
             mom1 = data.calculate_moment(moment=1, use_model=use_model)
         if mom2 is None:
@@ -614,11 +597,18 @@ class Qube(object):
                     g = fit_g(g_init, VelArr[isfin], RowData[isfin])
                     mom1.data[jj, ii] = g.mean.value
                     mom2.data[jj, ii] = g.stddev.value
+                    if return_amp:
+                        amp.data[jj, ii] = g.amplitude.value
                 else:
+                    if return_amp:
+                        amp.data[jj, ii] = np.NaN
                     mom1.data[jj, ii] = np.NaN
                     mom2.data[jj, ii] = np.NaN
 
-        return mom1, mom2
+        if return_amp:
+            return amp, mom1, mom2
+        else:
+            return mom1, mom2
 
     def get_spec1d(self, continuum_correct=False, limits=None,
                    beam_correct=True, use_model=False, **kwargs):
@@ -675,8 +665,10 @@ class Qube(object):
         # sum up the pixels in each channel
         if data.ndim == 2:
             spec = np.nansum(data)
-        if data.ndim == 3:
+        elif data.ndim == 3:
             spec = np.nansum(np.nansum(data, axis=1), axis=1)
+        else:
+            raise NotImplementedError('Can only deal with 2D or 3D data.')
 
         # divide by the number of pixels per beam to get flux density
         if beam_correct:
@@ -828,11 +820,15 @@ class Qube(object):
         # continuum image or moment image), then store the beam in the
         # primary header and remove the CASAMBM
         if self.beam['BMAJ'].size == 1:
-            if overwrite_beam:
+            try:
                 self.header['BMAJ'] = self.beam['BMAJ'][0]
                 self.header['BMIN'] = self.beam['BMIN'][0]
                 self.header['BPA'] = self.beam['BPA'][0]
-                self.header.remove('CASAMBM', ignore_missing=True)
+            except IndexError:
+                self.header['BMAJ'] = self.beam['BMAJ']
+                self.header['BMIN'] = self.beam['BMIN']
+                self.header['BPA'] = self.beam['BPA']
+            self.header.remove('CASAMBM', ignore_missing=True)
             Fit = fits.PrimaryHDU(self.data, header=self.header)
             Fit.writeto(fitsfile, overwrite=True)
         else:
@@ -890,8 +886,8 @@ class Qube(object):
 
         Returns
         -------
-            NUMPY.ARRAY or ASTROPY.QUANTITY
-                'Velocity' array (in km/s or Hz, m)
+        NUMPY.ARRAY or ASTROPY.QUANTITY
+            'Velocity' array (in km/s or Hz, m)
 
         """
         # get the channels/values to convert
@@ -910,13 +906,13 @@ class Qube(object):
         elif self.header['CTYPE3'] == 'AWAV':
             FreqArr = (const.c / (Arr * u.AA)).to(u.Hz)
         elif self.header['CTYPE3'] == 'VOPT':
-            Velocity = u.Quantity(Arr,
-                                  unit=self.header['CUNIT3']).to('km/s')
-            return Velocity
+            Velocity = u.Quantity(Arr, unit=self.header['CUNIT3']).to('km/s')
+            Freq2Vel = u.doppler_radio(RestFreq)
+            FreqArr = Velocity.to(u.Hz, equivalencies=Freq2Vel)
         elif self.header['CTYPE3'] == 'VRAD':
-            Velocity = u.Quantity(Arr,
-                                  unit=self.header['CUNIT3']).to('km/s')
-            return Velocity
+            Velocity = u.Quantity(Arr, unit=self.header['CUNIT3']).to('km/s')
+            Freq2Vel = u.doppler_radio(RestFreq)
+            FreqArr = Velocity.to(u.Hz, equivalencies=Freq2Vel)
         else:
             raise ValueError(self.header['CTYPE3'])
 
@@ -962,6 +958,8 @@ class Qube(object):
         ratio. This can be used as a quick seach algorithm or as a way to
         show both narrow and wide emission features at the same time.
         """
+        mom0 = copy.deepcopy(self)
+        
         # create a slew of moment-0 images
         VelArr = self.get_velocity()
         DV = self.get_velocitywidth()
@@ -996,8 +994,13 @@ class Qube(object):
                 Mom0[i, j] = fMom0[SNRargmax[i, j], i, j]
                 VelStart[i, j] = VelArr[ChanLE[SNRargmax[i, j]]]
                 VelEnd[i, j] = VelArr[ChanRE[SNRargmax[i, j]]]
+        mom0.data = Mom0
+                
+        # fix the header and update beam
+        mom0.__fix_header__()
+        mom0.__fix_beam__()
 
-        return Mom0, SNRmax, VelStart, VelEnd
+        return mom0, SNRmax, VelStart, VelEnd
 
     def _bootstrap_sigma_(self, mask, nboot=500, asymmetric=False,
                           gaussian=True, **kwargs):
@@ -1094,7 +1097,8 @@ class Qube(object):
         """
         inst_red = {'ALMA': self.__ALMA__, 'EVLA': self.__EVLA__,
                     'Hale5m': self.__PCWI__, 'Keck II': self.__KCWI__,
-                    'NOEMA': self.__NOEMA__, 'ESO-VLT-U4': self.__MUSE__}
+                    'NOEMA': self.__NOEMA__, 'ESO-VLT-U4': self.__MUSE__,
+                    'NGVLA': self.__NGVLA__, 'VLA': self.__VLA__}
 
         if 'INSTRUME' in self.header and 'TELESCOP' not in self.header:
             self.header['TELESCOP'] = self.header['INSTRUME']
@@ -1115,6 +1119,14 @@ class Qube(object):
             self.__AIPS__()
         else:
             self.instr = 'EVLA_CASA'
+
+    def __VLA__(self):
+        """Fix for VLA, assuming reduction with AIPS or CASA."""
+        if 'AIPS' in self.header.tostring():
+            self.instr = 'EVLA_AIPS'
+            self.__AIPS__()
+        else:
+            self.instr = 'VLA_CASA'
 
     def __NOEMA__(self):
         """Fix for NOEMA and GILDAS."""
@@ -1168,14 +1180,19 @@ class Qube(object):
         self.header.set('RESTFRQ', restfreq)
 
         #  add CDELT3 keyword and convert values to frequency
-        cdelt3 = self.header['CD3_3']
-        self.header.set('CDELT3', cdelt3)
+        if 'CD3_3' in self.header:
+            cdelt3 = self.header['CD3_3']
+            self.header.set('CDELT3', cdelt3)
 
         # add some 'fake' beam parameters these should be first
         # updated to the seeing values of the data.
         self.header.set('BMAJ', 1.0 / 3600.)
         self.header.set('BMIN', 1.0 / 3600.)
         self.header.set('BPA',  0.0)
+
+    def __NGVLA__(self):
+        """Fix for NGVLA, assuming reduction with CASA."""
+        self.instr = 'NGVLA_CASA'
 
     def __AIPS__(self):
         """Fix specific to AIPS to deal with the beam."""
@@ -1186,7 +1203,7 @@ class Qube(object):
         # look for a line like this in the history to get beam information
         # HISTORY AIPS CLEAN  BMAJ=1.7599E-03  BMIN=1.5740E-03  BPA=2.61
         for line in self.header['History']:
-            if 'BMAJ' in line:
+            if 'BMAJ' in line and 'AIPS' in line:
                 if 'BMAJ' not in self.header:
                     self.header.insert('History',
                                        ('BMAJ', float(line.split()[3])))
@@ -1241,7 +1258,6 @@ def __fit_gaussian__(data, doguess=True, gausspar=None, bins=None,
     """Fit a Gaussian to a data distribution."""
     # parse only the finite data
     data = data[np.isfinite(data)]
-
     # decicde on the range and the bins
     if doguess:
         gausspar = [0., np.mean(data), np.std(data)]
@@ -1251,29 +1267,23 @@ def __fit_gaussian__(data, doguess=True, gausspar=None, bins=None,
         if bins is None or gausspar is None:
             raise ValueError('Please set the bin range and/or approximate' +
                              'Gaussian values.')
-
     # create a histogram
     hist, txval = np.histogram(data, bins=bins)
     xval = (txval[:-1]+txval[1:]) / 2
-
     # update the gaussian guess for amplitude
     if doguess:
         gausspar[0] = np.max(hist)
-
     # define the Gaussian model
-    g_init = models.Gaussian1D(amplitude=gausspar[0],
-                               mean=gausspar[1],
-                               stddev=gausspar[2])
+    g_init = models.Gaussian1D(amplitude=gausspar[0], mean=gausspar[1], stddev=gausspar[2])
     fit_g = fitting.LevMarLSQFitter()
     g = fit_g(g_init, xval, hist)
-
+    # make a plot of the Gaussian fitting
     if ax is not None:
-        __make_sigplot__(g.stddev.value, xval, hist, g, bins, ax, channel)
-
+        __make_sigplot__(g.stddev.value, xval, hist, g, ax, channel)
     return g
 
 
-def __make_sigplot__(sigma, xval, hist, g, bins, ax, channel):
+def __make_sigplot__(sigma, xval, hist, g, ax, channel):
     """Make a histogram plot of the Gaussian fit."""
     ax.plot(xval, hist, 'o')
     ax.plot(xval, g(xval), label='Gaussian')

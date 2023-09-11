@@ -24,7 +24,7 @@ def set_model():
     QubeS.variance = np.square(QSig)
 
     # Defining the Kernel
-    QubeS.create_gaussiankernel(channels=[0], LSFSigma=0.1)
+    QubeS.create_gaussiankernel(channels=[0], lsf_sigma=0.1)
 
     # Setting the Mask
     QubeS.create_maskarray(sigma=3, fmaskgrow=0.01)
