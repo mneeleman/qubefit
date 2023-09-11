@@ -809,7 +809,7 @@ class Qube(object):
         return dict({'pvdata': pvarray, 'extent': extent, 'position': position,
                      'velocity': velocity})
 
-    def to_fits(self, fitsfile='./cube.fits'):
+    def to_fits(self, fitsfile='./cube.fits', overwrite_beam=True):
         """
         Write the qube instance to fits file.
 
@@ -824,17 +824,15 @@ class Qube(object):
         None.
 
         """
-        # save the cube as a fits file
-        Fit1 = fits.PrimaryHDU(self.data, header=self.header)
-
         # if the image hasa a single beam (i.e., one channel such as a
         # continuum image or moment image), then store the beam in the
         # primary header and remove the CASAMBM
         if self.beam['BMAJ'].size == 1:
-            self.header['BMAJ'] = self.beam['BMAJ'][0]
-            self.header['BMIN'] = self.beam['BMIN'][0]
-            self.header['BPA'] = self.beam['BPA'][0]
-            self.header.remove('CASAMBM', ignore_missing=True)
+            if overwrite_beam:
+                self.header['BMAJ'] = self.beam['BMAJ'][0]
+                self.header['BMIN'] = self.beam['BMIN'][0]
+                self.header['BPA'] = self.beam['BPA'][0]
+                self.header.remove('CASAMBM', ignore_missing=True)
             Fit = fits.PrimaryHDU(self.data, header=self.header)
             Fit.writeto(fitsfile, overwrite=True)
         else:
