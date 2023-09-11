@@ -820,14 +820,15 @@ class Qube(object):
         # continuum image or moment image), then store the beam in the
         # primary header and remove the CASAMBM
         if self.beam['BMAJ'].size == 1:
-            try:
-                self.header['BMAJ'] = self.beam['BMAJ'][0]
-                self.header['BMIN'] = self.beam['BMIN'][0]
-                self.header['BPA'] = self.beam['BPA'][0]
-            except IndexError:
-                self.header['BMAJ'] = self.beam['BMAJ']
-                self.header['BMIN'] = self.beam['BMIN']
-                self.header['BPA'] = self.beam['BPA']
+            if overwrite_beam:
+                try:
+                    self.header['BMAJ'] = self.beam['BMAJ'][0]
+                    self.header['BMIN'] = self.beam['BMIN'][0]
+                    self.header['BPA'] = self.beam['BPA'][0]
+                except IndexError:
+                    self.header['BMAJ'] = self.beam['BMAJ']
+                    self.header['BMIN'] = self.beam['BMIN']
+                    self.header['BPA'] = self.beam['BPA']
             self.header.remove('CASAMBM', ignore_missing=True)
             Fit = fits.PrimaryHDU(self.data, header=self.header)
             Fit.writeto(fitsfile, overwrite=True)
