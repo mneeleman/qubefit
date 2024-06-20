@@ -655,7 +655,7 @@ def get_beam(qube, ax, loc='lower left', pad=0.3, borderpad=0.4, frameon=True, c
 
 
 def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, guessmean=None, pbcor=1.,
-                       cont_correct=False, lim=None, **kwargs):
+                       cont_correct=False, lim=None, return_spec=False, **kwargs):
     # calculate sigma
     bmaj = qube.beam['BMAJ'] / np.sqrt(8 * np.log(2)) / np.abs(qube.header['CDELT1'])
     bmin = qube.beam['BMIN'] / np.sqrt(8 * np.log(2)) / np.abs(qube.header['CDELT1'])
@@ -731,7 +731,11 @@ def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, 
                              'dsnudv': np.sqrt(np.sum(np.square(sigmapb[full_idx]))) * dv,
                              'snr': np.sum(snupb[full_idx]) / np.sqrt(np.sum(np.square(sigmapb[full_idx]))),
                              'snr_opt': np.sum(snupb[opt_idx]) / np.sqrt(np.sum(np.square(sigmapb[opt_idx])))}}
-    return linedict
+    if return_spec:
+        spec = {'velocity': v, 'flux': snupb, 'sigma': sigmapb}
+        return linedict, spec
+    else:
+        return linedict
 
 
 class AnchoredEllipse(AnchoredOffsetbox, ABC):
