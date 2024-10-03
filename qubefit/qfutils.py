@@ -119,8 +119,10 @@ def standardfig(raster=None, contour=None, rasterselect='data', contourselect='d
         if scale is None:
             scale = np.abs(contour.header['CDELT1'] * 3600)
         position = __get_plotposrange__(origin, contour_data.shape, scale, getposition=True, flip=flip)
-        xc = np.linspace(position[0], position[1], contour_data.shape[0]) * scale
-        yc = np.linspace(position[2], position[3], contour_data.shape[1]) * scale
+        if raster is None and flip:
+            ax.set_xlim(np.array([position[0], position[1]]) * scale)
+        xc = np.linspace(position[0], position[1], contour_data.shape[-1]) * scale
+        yc = np.linspace(position[2], position[3], contour_data.shape[-2]) * scale
         # deal with contour levels
         if clevels is None:
             raise ValueError('Set the contour levels (clevels) keyword.')
