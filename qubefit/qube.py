@@ -1099,7 +1099,8 @@ class Qube(object):
         inst_red = {'ALMA': self.__ALMA__, 'EVLA': self.__EVLA__,
                     'Hale5m': self.__PCWI__, 'Keck II': self.__KCWI__,
                     'NOEMA': self.__NOEMA__, 'ESO-VLT-U4': self.__MUSE__,
-                    'NGVLA': self.__NGVLA__, 'VLA': self.__VLA__}
+                    'NGVLA': self.__NGVLA__, 'VLA': self.__VLA__,
+                    'VLBA': self.__VLBA__}
 
         if 'INSTRUME' in self.header and 'TELESCOP' not in self.header:
             self.header['TELESCOP'] = self.header['INSTRUME']
@@ -1194,6 +1195,14 @@ class Qube(object):
     def __NGVLA__(self):
         """Fix for NGVLA, assuming reduction with CASA."""
         self.instr = 'NGVLA_CASA'
+
+    def __VLBA__(self):
+        """Fix for VLBA, assuming reduction with AIPS"""
+        if 'AIPS' in self.header.tostring():
+            self.instr = 'VLBA_AIPS'
+            self.__AIPS__()
+        else:
+            raise ValueError('Only VLBA/AIPS is currently supported')
 
     def __AIPS__(self):
         """Fix specific to AIPS to deal with the beam."""
