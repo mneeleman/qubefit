@@ -796,7 +796,7 @@ class Qube(object):
         dv = np.mean(velocity[1:] - velocity[:-1])
         extent = ((pixposition[0] - 0.5) * scale,
                   (pixposition[np.size(pixposition) - 1] + 0.5) * scale,
-                  velocity[0] - dv, velocity[np.size(velocity) - 1] + dv)
+                  velocity[0] - dv / 2, velocity[-1] + dv / 2)
 
         return dict({'pvdata': pvarray, 'extent': extent, 'position': position,
                      'velocity': velocity})
