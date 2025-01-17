@@ -184,17 +184,18 @@ class Qube(object):
         plotfile : TYPE, optional
             The file in which to save the sigma QA plot.
             The default is './sigma_estimate.pdf'.
-        doguess : BOOLEAN, optional
-            If set, the code will calculate the bin size and the intial
-            estimates for the gaussian fit. The default is True.
-        gausspar : LIST, optional
-            If a list is given it is taken as the initial guesses for the
-            Gaussian fit. This has to be set with the number of bins for
-            the histogram, otherwise doguess has to be set to True, which
-            will overwrite the values given here. The default is None.
-        bins : INT, optional
-            The number of bins to use in the histogram. If not set, doguess
-            needs to be set, which calculates this value.
+        use_residual : BOOLEAN, optional
+            If set, the calculation will use the resdiual data array, which
+            is often the data-model array for improved statistics.
+
+        Inhereted Parameters
+        --------------------
+        The project also inherits the keywords from __fit_gaussian__. In
+        particular the keywords doguess (Boolean that if set, will guess
+        the initial estimates for the fit), guasspar (list, the inital
+        estimates for the fit if doguess is not set), and bins (int, the
+        number of bins in the histogram). Normally doguess does a good
+        job and you do not need to worry about these.
 
         Returns
         -------
@@ -207,23 +208,19 @@ class Qube(object):
         # either 2D or 3D case
         if self.data.ndim == 2:
             # parse the data to be fitted
-            if use_residual:
+            if use_residual and hasattr(self, 'residual'):
                 data = self.residual
             else:
                 data = self.data
             if ignorezero:
                 data = data[np.where(data != 0)]
-            # if qa plot is wanted
-            if plot:
+            if plot:  # if qa plot is wanted
                 fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-            else:
-                ax = None
-            # fit the data
-            g = __fit_gaussian__(data, ax=ax, **kwargs)
-            # save and close the plot
-            if plot:
+                g = __fit_gaussian__(data, ax=ax, **kwargs)
                 plt.savefig(plotfile, format='pdf', dpi=300)
                 plt.close('all')
+            else:
+                g = __fit_gaussian__(data, **kwargs)
             # get sigma
             sigma = g.stddev.value
         elif self.data.ndim == 3:
@@ -235,7 +232,7 @@ class Qube(object):
                 pdf = matplotlib.backends.backend_pdf.PdfPages(plotfile)
             sigma = []
             for channel in channels:
-                if use_residual:
+                if use_residual and hasattr(self, 'residual'):
                     data = self.residual[channel, :, :]
                 else:
                     data = self.data[channel, :, :]
@@ -331,76 +328,68 @@ class Qube(object):
 
         """
         # init
-        MaskRegion = copy.deepcopy(self)
-        Mask = np.ones_like(MaskRegion.data)
+        mask_region = copy.deepcopy(self)
+        mask = np.ones_like(mask_region.data)
 
         # Ellipse: [xcntr,ycntr,rmaj,rmin,angle]
         if ellipse is not None:
             # create indices array
-            tidx = np.indices(MaskRegion.data.shape)
-
+            tidx = np.indices(mask_region.data.shape)
             # translate
             tidx[-1, :] = tidx[-1, :] - ellipse[0]
             tidx[-2, :] = tidx[-2, :] - ellipse[1]
-
             # rotate
             angle = (90 + ellipse[4]) * np.pi / 180.
             rmaj = tidx[-1, :] * np.cos(angle) + tidx[-2, :] * np.sin(angle)
             rmin = tidx[-2, :] * np.cos(angle) - tidx[-1, :] * np.sin(angle)
-
             # find pixels within ellipse and mask
             size = np.array([ellipse[2], ellipse[3]])
             tmask = np.where(((rmaj / size[0])**2 + (rmin / size[1])**2) <= 1,
                              1, np.nan)
-            Mask = Mask * tmask
+            mask = mask * tmask
 
         # Rectangle: [xb, yb, xt, yt]
         if rectangle is not None:
             # create indices array
-            tidx = np.indices(MaskRegion.data.shape)
-
+            tidx = np.indices(mask_region.data.shape)
             tmask = np.where((tidx[-1, :] >= rectangle[0] - rectangle[2]) &
                              (tidx[-1, :] <= rectangle[0] + rectangle[2]) &
                              (tidx[-2, :] >= rectangle[1] - rectangle[3]) &
                              (tidx[-2, :] <= rectangle[1] + rectangle[3]))
-
-            Mask = Mask * tmask
+            mask = mask * tmask
 
         # Value: data > value
         if value is not None:  # reject values below this value
             if (type(value) is float or type(value) is int or
                     type(value) is np.float64):
-                tval = np.full(MaskRegion.data.shape, value)
+                tval = np.full(mask_region.data.shape, value)
             else:  # assume list
-                tval = np.zeros(MaskRegion.data.shape)
-                for chan in np.arange(MaskRegion.data.shape[0]):
+                tval = np.zeros(mask_region.data.shape)
+                for chan in np.arange(mask_region.data.shape[0]):
                     tval[chan, :, :] = value[chan]
-
-            tmask = np.where(MaskRegion.data >= tval, 1, np.nan)
-
-            Mask = Mask * tmask
+            tmask = np.where(mask_region.data >= tval, 1, np.nan)
+            mask = mask * tmask
 
         # Moment: mom0 > moment
         if moment is not None:
             # create a temporary moment-zero image
-            Mom0 = MaskRegion.calculate_moment(moment=0, channels=channels)
-            MomSig = Mom0.calculate_sigma()
-            MomentMaskValue = np.ones_like(Mom0.data) * MomSig * moment
-            MomentMask = np.where(Mom0.data >= MomentMaskValue, 1, np.nan)
-
-            tmask = np.tile(MomentMask, (MaskRegion.data.shape[0], 1, 1))
-            Mask = Mask * tmask
+            mom0 = mask_region.calculate_moment(moment=0, channels=channels)
+            mom_sig = mom0.calculate_sigma()
+            moment_mask_value = np.ones_like(mom0.data) * mom_sig * moment
+            moment_mask = np.where(mom0.data >= moment_mask_value, 1, np.nan)
+            tmask = np.tile(moment_mask, (mask_region.data.shape[0], 1, 1))
+            mask = mask * tmask
 
         # Set mask manually
         if mask is not None:
-            Mask = Mask * mask
+            mask = mask * mask
 
         # apply the mask
         if applymask:
-            MaskRegion.data = MaskRegion.data * Mask
-            return MaskRegion
+            mask_region.data = mask_region.data * mask
+            return mask_region
         else:
-            return Mask
+            return mask
 
     def calculate_moment(self, moment=0, channels=None, restfreq=None,
                          use_model=False, **kwargs):
@@ -1265,7 +1254,23 @@ class Qube(object):
 # some auxilliary functions not directly part of the Qube class
 def __fit_gaussian__(data, doguess=True, gausspar=None, bins=None,
                      ax=None, channel=0):
-    """Fit a Gaussian to a data distribution."""
+    """Fit a Gaussian to a data distribution.
+
+    Parameters:
+    -----------
+    doguess : BOOLEAN, optional
+        If set, the code will calculate the bin size and the intial
+        estimates for the gaussian fit. The default is True.
+    gausspar : LIST, optional
+        If a list is given it is taken as the initial guesses for the
+        Gaussian fit. This has to be set with the number of bins for
+        the histogram, otherwise doguess has to be set to True, which
+        will overwrite the values given here. The default is None.
+    bins : INT, optional
+        The number of bins to use in the histogram. If not set, doguess
+        needs to be set, which calculates this value.
+    """
+
     # parse only the finite data
     data = data[np.isfinite(data)]
     # decicde on the range and the bins

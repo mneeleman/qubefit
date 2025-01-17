@@ -17,6 +17,7 @@ import astropy.units as u
 from astropy.wcs import WCS
 from astropy.modeling import models, fitting
 from astropy.stats import sigma_clip
+import warnings
 
 
 def standardfig(raster=None, contour=None, rasterselect='data', contourselect='data', newplot=False, ax=None, fig=None,
@@ -136,7 +137,7 @@ def standardfig(raster=None, contour=None, rasterselect='data', contourselect='d
         else:
             raise ValueError('To draw a beam something has to be drawn')
         ax.add_artist(get_beam(data, ax, scale=scale, flip=flip, fill=beamfill, hatch=beamhatch,
-                               edgecolor=beamedgecolor, **kwargs))
+                               color=beamedgecolor, **kwargs))
     # optional text
     if text is not None:
         if textposition is None:
@@ -657,7 +658,9 @@ def get_beam(qube, ax, loc='lower left', pad=0.3, borderpad=0.4, frameon=True, c
 
 
 def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, guessmean=None, pbcor=1.,
-                       cont_correct=False, lim=None, return_spec=False, **kwargs):
+                       cont_correct=False, lim=None, return_spec=False, guessamp=None, guesssig=None, **kwargs):
+    # ignore runtime warnings in fitting
+    warnings.filterwarnings("ignore")
     # calculate sigma
     bmaj = qube.beam['BMAJ'] / np.sqrt(8 * np.log(2)) / np.abs(qube.header['CDELT1'])
     bmin = qube.beam['BMIN'] / np.sqrt(8 * np.log(2)) / np.abs(qube.header['CDELT1'])
@@ -693,8 +696,18 @@ def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, 
     snupb = snu * pbcor
     # Gaussian fit of the spectrum
     if guessmean is None:
-        guessmean = v[np.median(np.where(snupb > 2 * sigmapb)).astype(int)]
-    gausspar = [snupb[np.where(np.abs(v - guessmean) < dv / 2)[0]], guessmean, 100]
+        if np.where(snupb > 2 * sigmapb)[0].size > 0:
+            guessmean = v[np.median(np.where(snupb > 2 * sigmapb)[0]).astype(int)]
+        else:
+            guessmean = v[int(len(v) / 2)]
+    if guessamp is None:
+        if np.where(np.abs(v - guessmean) < dv / 2)[0].size > 0:
+            guessamp = snupb[np.where(np.abs(v - guessmean) < dv / 2)[0]]
+        else:
+            guessamp = np.max(snupb)
+    if guesssig is None:
+        guesssig = 100
+    gausspar = [guessamp, guessmean, guesssig]
     g_init = models.Gaussian1D(amplitude=gausspar[0], mean=gausspar[1], stddev=gausspar[2])
     fit_g = fitting.LevMarLSQFitter()
     g = fit_g(g_init, v, snupb)
@@ -786,14 +799,14 @@ def __get_beamproperties__(qube, scale=None, wcs=None):
 
 def __get_plotposrange__(origin, shape, scale, getposition=False, flip=False):
     # position and plotrange
-    position = np.array([-origin[0], shape[0]-origin[0]-1,
-                         -origin[1], shape[1]-origin[1]-1])
+    position = np.array([-origin[0], shape[1]-origin[0]-1,
+                         -origin[1], shape[0]-origin[1]-1])
     pltrange = np.array([position[0]-0.5, position[1]+0.5,
                          position[2]-0.5, position[3]+0.5]) * scale
     # flip the position and position in the x-direction
     if flip:
-        position = np.array([position[1], position[0], position[2], position[3]])
-        pltrange = np.array([pltrange[1], pltrange[0], pltrange[2], pltrange[3]])
+        position = np.array([-1*position[0], -1*position[1], position[2], position[3]])
+        pltrange = np.array([-1*pltrange[0], -1*pltrange[1], pltrange[2], pltrange[3]])
     if getposition:
         return position
     else:
