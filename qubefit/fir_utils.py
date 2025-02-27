@@ -7,7 +7,7 @@ from astropy.cosmology import FlatLambdaCDM
 from astropy.modeling.physical_models import BlackBody
 
 
-def calculate_ltir(flux, nu, z, cosmo=None, **kwargs):
+def calculate_ltir(flux, nu, z, cosmo=None, do_cmbcorrection=True, t_dust=47*u.K, **kwargs):
     """ This function will calculate the TIR luminosity
     needed to match the measured flux density (flux) at
     the given frequency (nu) for an object at redshift (z).
@@ -16,8 +16,10 @@ def calculate_ltir(flux, nu, z, cosmo=None, **kwargs):
     been normalized on the interval given by (normalize).
     """
     cosmo = FlatLambdaCDM(H0=70, Om0=0.3) if cosmo is None else cosmo
-    scale = flux / __mbb__(nu, **kwargs)
-    tir = 4 * np.pi * cosmo.luminosity_distance(z)**2 * scale / (1+z)
+    nu = __get_nu__(nu) if type(nu) is str else nu
+    scale = flux / __mbb__(nu, t_dust=t_dust, **kwargs)
+    fcmb = 1.0 if not do_cmbcorrection else __cmbcor__(z, nu, t_dust)
+    tir = 4 * np.pi * cosmo.luminosity_distance(z)**2 * scale / (1+z) /fcmb
     return tir.cgs
 
 
@@ -28,6 +30,7 @@ def calculate_lline(sdv, nu, z, cosmo=None):
     It uses the equation in i.e., Solomon et al. 1997 ApJ, 478, 144
     """
     cosmo = FlatLambdaCDM(H0=70, Om0=0.3) if cosmo is None else cosmo
+    nu = __get_nu__(nu) if type(nu) is str else nu
     lline = (4 * np.pi / const.c) * sdv * nu * cosmo.luminosity_distance(z)**2 / (1 + z)
     return lline.cgs
 
@@ -100,21 +103,26 @@ def calculate_dustmass(snu, nu, z, t_dust=47*u.K, beta=1.6, cosmo=None, kappa0=2
     return (snu * dl**2 / ((1 + z) * kappa * bb)).to(u.Msun)
 
 
-def __mbb__(nu, t_dust=35 * u.K, alpha=2.0, beta=1.6, normalize=(8 * u.um, 1000 * u.um), rootguess=2E12 * u.s ** -1):
+def __mbb__(nu, t_dust=47 * u.K, alpha=2.0, beta=1.6, normalize=(8 * u.um, 1000 * u.um),
+            rootguess=2E12 * u.s ** -1):
     """ This function will return a modified black body
     spectrum with dust temperature (T), Raleigh-Jeans slope
     (beta), and mid-IR excess slope (alpha) at the requested
     frequency/frequencies, normalized so that the area under the
     curve is 1 for the range specified with normalize.
     """
-    sol = optimize.root(__mbb_root__, rootguess.value, args=(t_dust.value, alpha, beta))
-    if not sol.success:
-        raise ValueError('No roots found!')
-    nu_c = sol.x
-    scale = __unscaled_graybody__(nu_c, t_dust.value, beta) / nu_c ** (-1 * alpha)
     nulim = ((const.c / normalize[0]).cgs, (const.c / normalize[1]).cgs)
-    norm = quad(__unscaled_mbb__, nulim[1].value, nulim[0].value, (t_dust.value, alpha, beta, nu_c, scale))
-    mbb = __unscaled_mbb__(nu.cgs.value, t_dust.value, alpha, beta, nu_c, scale) / norm[0]
+    if alpha is None:
+        norm = quad(__unscaled_graybody__, nulim[1].value, nulim[0].value, (t_dust.value, beta))
+        mbb = __unscaled_graybody__(nu.cgs.value, t_dust.value, beta) / norm[0]
+    else:
+        sol = optimize.root(__mbb_root__, rootguess.value, args=(t_dust.value, alpha, beta))
+        if not sol.success:
+            raise ValueError('No roots found!')
+        nu_c = sol.x
+        scale = __unscaled_graybody__(nu_c, t_dust.value, beta) / nu_c ** (-1 * alpha)
+        norm = quad(__unscaled_mbb__, nulim[1].value, nulim[0].value, (t_dust.value, alpha, beta, nu_c, scale))
+        mbb = __unscaled_mbb__(nu.cgs.value, t_dust.value, alpha, beta, nu_c, scale) / norm[0]
     return mbb * u.s
 
 
@@ -169,3 +177,9 @@ def __get_nu__(nu):
     getnu = {'CII': 1900.5369 * u.GHz, 'CO10': 115.2712 * u.GHz, 'CO21': 230.5380 * u.GHz,
              'CO32': 345.7960 * u.GHz, 'CO43': 461.0408 * u.GHz, 'CO54': 576.2679 * u.GHz}
     return getnu[nu]
+
+
+def __cmbcor__(z, nu, t_dust):
+    return 1 - (BlackBody(2.72548 * u.K * (1 + z))(nu) / BlackBody(t_dust)(nu)).cgs.value
+
+    

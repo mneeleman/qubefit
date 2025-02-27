@@ -329,7 +329,7 @@ class Qube(object):
         """
         # init
         mask_region = copy.deepcopy(self)
-        mask = np.ones_like(mask_region.data)
+        msk = np.ones_like(mask_region.data)
 
         # Ellipse: [xcntr,ycntr,rmaj,rmin,angle]
         if ellipse is not None:
@@ -346,7 +346,7 @@ class Qube(object):
             size = np.array([ellipse[2], ellipse[3]])
             tmask = np.where(((rmaj / size[0])**2 + (rmin / size[1])**2) <= 1,
                              1, np.nan)
-            mask = mask * tmask
+            msk = msk * tmask
 
         # Rectangle: [xb, yb, xt, yt]
         if rectangle is not None:
@@ -356,7 +356,7 @@ class Qube(object):
                              (tidx[-1, :] <= rectangle[0] + rectangle[2]) &
                              (tidx[-2, :] >= rectangle[1] - rectangle[3]) &
                              (tidx[-2, :] <= rectangle[1] + rectangle[3]))
-            mask = mask * tmask
+            msk = msk * tmask
 
         # Value: data > value
         if value is not None:  # reject values below this value
@@ -368,7 +368,7 @@ class Qube(object):
                 for chan in np.arange(mask_region.data.shape[0]):
                     tval[chan, :, :] = value[chan]
             tmask = np.where(mask_region.data >= tval, 1, np.nan)
-            mask = mask * tmask
+            msk = msk * tmask
 
         # Moment: mom0 > moment
         if moment is not None:
@@ -378,18 +378,18 @@ class Qube(object):
             moment_mask_value = np.ones_like(mom0.data) * mom_sig * moment
             moment_mask = np.where(mom0.data >= moment_mask_value, 1, np.nan)
             tmask = np.tile(moment_mask, (mask_region.data.shape[0], 1, 1))
-            mask = mask * tmask
+            msk = msk * tmask
 
         # Set mask manually
         if mask is not None:
-            mask = mask * mask
+            msk = msk * mask
 
         # apply the mask
         if applymask:
-            mask_region.data = mask_region.data * mask
+            mask_region.data = mask_region.data * msk
             return mask_region
         else:
-            return mask
+            return msk
 
     def calculate_moment(self, moment=0, channels=None, restfreq=None,
                          use_model=False, **kwargs):
@@ -1216,14 +1216,11 @@ class Qube(object):
     def __add_beam__(self, hdu):
         """Add the beam data attribute (different for CASA)."""
         if 'CASAMBM' in self.header:
-            self.beam = {'BMAJ': hdu[1].data['BMAJ'],
-                         'BMIN': hdu[1].data['BMIN'],
+            self.beam = {'BMAJ': hdu[1].data['BMAJ'] / 3600,
+                         'BMIN': hdu[1].data['BMIN'] / 3600,
                          'BPA': hdu[1].data['BPA'],
                          'CHAN': hdu[1].data['CHAN'],
                          'POL': hdu[1].data['POL']}
-            # stupid fixes
-            self.beam['BMAJ'] = self.beam['BMAJ'] / 3600
-            self.beam['BMIN'] = self.beam['BMIN'] / 3600
         else:
             if 'NAXIS3' in self.header:
                 nchan = self.header['NAXIS3']
@@ -1234,6 +1231,9 @@ class Qube(object):
                          'BPA': np.full(nchan, self.header['BPA']),
                          'CHAN': np.arange(0, nchan),
                          'POL': np.zeros(nchan)}
+        # add beam area in arsec and pixels
+        self.beam['BAREA_DEG'] = (self.beam['BMAJ'] * self.beam['BMIN']) / (8 * np.log(2)) * 2 * np.pi
+        self.beam['BAREA_PIX'] = self.beam['BAREA_DEG'] / np.square(self.header['CDELT1'])
 
     def __fix_beam__(self, channels=None):
         """Fix the beam data attribute."""
@@ -1243,12 +1243,16 @@ class Qube(object):
             self.beam["BPA"] = np.mean(self.beam["BPA"])
             self.beam["CHAN"] = np.mean(self.beam["CHAN"], dtype=int)
             self.beam["POL"] = np.mean(self.beam["POL"], dtype=int)
+            self.beam["BAREA_DEG"] = np.mean(self.beam["BAREA_DEG"])
+            self.beam["BAREA_PIX"] = np.mean(self.beam["BAREA_PIX"])
         else:
             self.beam["BMAJ"] = self.beam["BMAJ"][channels]
             self.beam["BMIN"] = self.beam["BMIN"][channels]
             self.beam["BPA"] = self.beam["BPA"][channels]
             self.beam["CHAN"] = self.beam["CHAN"][channels]
             self.beam["POL"] = self.beam["POL"][channels]
+            self.beam["BAREA_DEG"] = self.beam["BAREA_DEG"][channels]
+            self.beam["BAREA_PIX"] = self.beam["BAREA_PIX"][channels]
 
 
 # some auxilliary functions not directly part of the Qube class
@@ -1311,22 +1315,18 @@ def __make_sigplot__(sigma, xval, hist, g, ax, channel):
             transform=ax.transAxes)
 
 
-def __correct_flux__(flux, vel, limits):
+def __correct_flux__(flux, vel, limits, n_degree=2):
     """
     Correct the flux for continuum wiggles.
 
     This will fit the spectrum for a potential continuum residual or
     wiggles. The fitting function of the continuum is a second order
-    polynomial. The fit will ignore the region within the limits.
+    polynomial by default. The fit will ignore the region within the limits.
     """
-    # fit the spectrum for potential continuum residual
-    # (second order polynomial)
-
-    finit = models.Polynomial1D(2, c0=0, c1=0, c2=0)
+    finit = models.Polynomial1D(n_degree)
     fitter = fitting.LevMarLSQFitter()
-    ofitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=3,
-                                                sigma=3.0)
-    FitIdx = (vel < limits[0]) + (vel > limits[1])
-    OFit, OFitData = ofitter(finit, vel[FitIdx], flux[FitIdx])
+    ofitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=3, sigma=3.0)
+    fit_idx = (vel < limits[0]) + (vel > limits[1])
+    _o_fit, o_fit_data = ofitter(finit, vel[fit_idx], flux[fit_idx])
 
-    return flux - OFit(vel)
+    return flux - o_fit_data(vel)
