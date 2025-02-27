@@ -535,6 +535,20 @@ def make_cornerfigure(qf_object, plotfig=None, show_titles=True, **kwargs):
     return __returnfig__(plotfig, fig)
 
 
+def make_2dmodelfigure(qf_object, plotfig=None):
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3))
+    rms = qf_object.calculate_sigma()
+    psqrt2 = np.power(np.sqrt(2), np.arange(15))
+    clevels = np.insert(2 * psqrt2, 0, -2 * np.flip(psqrt2)) * rms
+    standardfig(raster=qf_object, rasterselect='data', contour=qf_object, contourselect='data',
+                clevels=clevels, ax=axs[0], fig=fig)
+    standardfig(raster=qf_object, rasterselect='model', contour=qf_object, contourselect='model',
+                clevels=clevels, ax=axs[1], fig=fig)
+    standardfig(raster=qf_object, rasterselect='residual', contour=qf_object, contourselect='residual',
+                clevels=clevels, ax=axs[2], fig=fig)
+    return __returnfig__(plotfig, fig)
+
+
 def diagnostic_plots(qf_object, chainfile=None, burnin=0.3, mcmcburnin=0.0, load_best=False, corner_figure=True,
                      momentcomparison_figure=True, channelmap_figure=True, mcmcchain_figure=True,
                      cube_rms=None, mom0_rms=None, figure_root='./model'):
@@ -666,9 +680,9 @@ def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, 
     bmin = qube.beam['BMIN'] / np.sqrt(8 * np.log(2)) / np.abs(qube.header['CDELT1'])
     beamarea = bmaj * bmin * 2 * np.pi
     if sig is None:
-        sigmapb = qube.calculate_sigma() * pbcor
+        sigmapb = qube.calculate_sigma() / pbcor
     else:
-        sigmapb = sig * pbcor
+        sigmapb = sig / pbcor
     # get xy coordinates in pixels
     if type(pos) is str:
         wcs = WCS(qube.header)
@@ -693,7 +707,7 @@ def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, 
         sigmapb *= np.sqrt(np.pi * rad**2 / beamarea)
         snu, v = qube_masked.get_spec1d(continuum_correct=cont_correct, limits=lim, **kwargs)
         dv = qube_masked.get_velocitywidth()
-    snupb = snu * pbcor
+    snupb = snu / pbcor
     # Gaussian fit of the spectrum
     if guessmean is None:
         if np.where(snupb > 2 * sigmapb)[0].size > 0:
@@ -738,7 +752,8 @@ def get_lineproperties(qube, pos, sig=None, radius=None, radius_in_arcsec=True, 
                              'mean_v': np.sum(v[full_idx] * snupb[full_idx]) / np.sum(snupb[full_idx]),
                              'dmean_v': fwhm_obs / (1.47 * factor),
                              'mean_nu': (qube.header['restfrq'] *
-                                         (1 - np.sum(v[full_idx] * snupb[full_idx]) / np.sum(snupb[full_idx]) / 299792.458)),
+                                         (1 - np.sum(v[full_idx] * snupb[full_idx]) / np.sum(snupb[full_idx]) /
+                                          299792.458)),
                              'dmean_nu': qube.header['restfrq'] / 299792.458 * fwhm_obs / (1.47 * factor),
                              'fwhm': fwhm_obs,
                              'dfwhm': fwhm_obs / (0.60 * factor),
@@ -859,11 +874,10 @@ def __correct_flux__(flux, vel, limits):
     # fit the spectrum for potential continuum residual
     # (second order polynomial)
 
-    finit = models.Polynomial1D(2, c0=0, c1=0, c2=0)
+    finit = models.Polynomial1D(2)
     fitter = fitting.LevMarLSQFitter()
-    ofitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=3,
-                                                sigma=3.0)
-    FitIdx = (vel < limits[0]) + (vel > limits[1])
-    OFit, OFitData = ofitter(finit, vel[FitIdx], flux[FitIdx])
+    ofitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=3, sigma=3.0)
+    fit_idx = (vel < limits[0]) + (vel > limits[1])
+    ofit, _ofit_data = ofitter(finit, vel[fit_idx], flux[fit_idx])
 
-    return flux - OFit(vel)
+    return flux - ofit(vel)

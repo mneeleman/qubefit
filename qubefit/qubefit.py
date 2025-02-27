@@ -11,11 +11,21 @@ import emcee
 from astropy.convolution import convolve, Gaussian1DKernel, Gaussian2DKernel
 from scipy.stats import norm, uniform, kstest
 from skimage import measure
-from qubefit.qube import Qube
-from qubefit.qfmodels import *
-from multiprocessing import Pool
 import os
+if os.getcwd() == '/Users/mneelema/Packages/qubefit/qubefit':
+    from qube import Qube
+    from qfmodels import *
+    from qfutils import make_cornerfigure, make_mcmcchainfigure, make_2dmodelfigure
+else:
+    from qubefit.qube import Qube
+    from qubefit.qfmodels import *
+    from qubefit.qfutils import make_cornerfigure, make_mcmcchainfigure, make_2dmodelfigure
+from multiprocessing import Pool
 import h5py
+from astropy.modeling.models import Gaussian2D, Sersic2D
+import json
+from astropy.modeling import Fittable2DModel, Parameter
+from scipy.special import gammaincinv
 
 
 class QubeFit(Qube):
@@ -58,9 +68,10 @@ class QubeFit(Qube):
             coordinate system this is r, phi and z in that order.
             The default is ['Constant', None, None].
     """
-    def __init__(self, modelname='ThinDisk', probmethod='ChiSq', intensityprofile=None,
-                 velocityprofile=None, dispersionprofile=None):
+    def __init__(self, modelname='ThinDisk', probmethod='ChiSq', intensityprofile=None, velocityprofile=None,
+                 dispersionprofile=None):
         """Initiate the qubefit class."""
+        super().__init__()
         self.modelname = modelname
         if intensityprofile is None:
             self.intensityprofile = ['Exponential', None, 'Exponential']
@@ -85,6 +96,7 @@ class QubeFit(Qube):
         self.mcmcdim = 0
         self.model = np.array([])
         self.residual = np.array([])
+        self.variance = np.array([])
         self.mcmcarray = None
         self.mcmclnprob = None
         self.chainpar = None
@@ -155,6 +167,10 @@ class QubeFit(Qube):
         theta = np.pi / 2. + np.radians(bpa)
         kernel_area = bmaj * bmin * 2 * np.pi
         # Here decide which channel(s) to use for generating the kernel
+        try:
+            len(bmaj)
+        except TypeError:
+            bmaj, bmin, bpa, theta, kernel_area = [bmaj], [bmin], [bpa], [theta], [kernel_area]
         if channels is None:
             channels = [len(bmaj) // 2]
         if type(channels) is int:
@@ -178,7 +194,7 @@ class QubeFit(Qube):
                 threed_kernel = convolve(temp_kernel, lsf_kernel[np.newaxis, np.newaxis, ...])
                 kernel = kernel + (threed_kernel, )
         # select the kernel areas
-        kernel_area = kernel_area[channels]
+        kernel_area = [kernel_area[x] for x in channels]
         # if a single channel is given then remove the list and force the
         # single kernel to be 3D.
         if len(kernel) == 1:
@@ -331,7 +347,7 @@ class QubeFit(Qube):
 
         # create the bootstrap array (do not redo if already done)
         if not hasattr(self, 'maskarray'):
-            self.__create_maskarray__()
+            self.create_maskarray()
 
         # define the keyword arguments for the model fitting function
         kwargs = self.__define_kwargs__()
@@ -356,9 +372,9 @@ class QubeFit(Qube):
             # run the mcmc chain
             sampler.run_mcmc(p0, nsteps, progress=True)
 
-        # Now store the results into the structure
-        self.mcmcarray = sampler.chain
-        self.mcmclnprob = sampler.lnprobability
+        # Now store the results into the structure (transpose is needed to agree with hdf5 structure)
+        self.mcmcarray = np.transpose(sampler.chain, axes=(1, 0, 2))
+        self.mcmclnprob = np.transpose(sampler.lnprobability, axes=(1, 0))
 
         # return the sampler (for testing of emcee)
         if return_sampler:
@@ -647,6 +663,152 @@ class QubeFit(Qube):
         else:
             raise ValueError('qubefit: Probability method is not defined: {}'.format(method))
 
+    def fit_2dmodel(self, initpar, modelname='gaussian2d', mcmcfilename=None, nwalkers=50, nsteps=100, sampling=2,
+                    regular=(), rms=None, sigma=2, nblobs=1, nproc=7, plotroot='./Test', outfile='./Test_fit.json'):
+        """
+        Fits a 2d model to the data.
+
+        Will work on a single image or a single channel for a cube.
+        First a check will be done if the data shape is 2d, if not
+        an error will be raised.
+        The fit will take into account the beam smearing of the data.
+        The model that it will take is a simple combination of 2D models defined
+        in the module astropy.modeling.models. Currently models that have
+        been implemented are Gaussian2D and Sersic2D. Each of these
+        models take their own parameters (no check is done that the
+        correct parameters are defined).
+        The approach is a simple minimzation of the 2D model using the
+        MCMC approach that is similar the the main qubefit function.
+
+        Parameters
+        ----------
+        initpar : DICT
+            dictionary with the initial guesses, priors and 'fixed'
+            booleans for the parameters of the model. An example of a single
+            component dictionary for the Gaussian2D is -
+            {'x': {'Value': 128, 'Fixed': False, 'Conversion': None, 'Unit': u.pix,
+                   'Dist': 'uniform', 'Dloc': 123, 'Dscale': 10},
+             'y': {'Value': 128, 'Fixed': False, 'Conversion': None, 'Unit': u.pix,
+                   'Dist': 'uniform', 'Dloc': 123, 'Dscale': 10},
+             'A': {'Value': 3E-3, 'Fixed': False, 'Conversion': None, 'Unit': u.Jy,
+                   'Dist': 'uniform', 'Dloc': 0, 'Dscale': 1E-1},
+             'sig_x': {'Value': 8, 'Fixed': False, 'Conversion': None, 'Unit': u.pix,
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 50},
+             'sig_y': {'Value': 4, 'Fixed': False, 'Conversion': None, 'Unit': u.pix,
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 50},
+             'theta': {'Value': 90, 'Fixed': False,
+                       'Conversion': (180 * u.deg) / (np.pi * u.rad), 'Unit': u.deg,
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 180}}
+        modelname: STRING
+            Name of the 2D model to use. Currently implmented are: 'gaussian2d', 'sersic2d'
+            or 'coresersic2d'. The latter is a sersic profile with a core defined by
+            a 2DSersic profile with the same X and Y position. Parameters are named _1 for
+            the main components and _2 for the core components.
+            The default is 'gaussian2d'
+        mcmcfilename: STRING
+            Name of the output file that contains the MCMC string. If set
+            to None, then no MCMC output file is generated and only the
+            final output file with the parameters is written out using the
+            keyword outfile.
+        nwalkers: INT
+            Number of walkers in the emcee process
+        nsteps: INT
+            Number of steps in the emcee process
+        sampling: INT
+            Number of approximate measurments per beam.
+            The default value is 2.
+        regular: TUPLE
+            Tuple that specified the center of the regular grid.
+            The default is the center of the data array.
+        rms: FLOAT
+            Noise rms of the image. If set to none, the rms will be calculated
+            from the input image.
+        sigma: FLOAT
+            The value (in rms of the data cube) to use as the cutoff
+            for the mask. The mask is grown slightly to include surrounding
+            pixels. The default is 2.
+        nblobs: INT
+            Number of distinct regions to include. That is, the number of
+            distinct sources to include in the data This number is best to
+            be set via trial and error, by looking at the mask beause sometimes
+            two sources are close enough together to form a single blob.
+            The default is 1.
+        nproc: INT
+            Number of processes to spawn. Should be less than the number of cores
+            in the system for optimal run times.
+        plotroot: STRING
+            The root name for the QA plots that are generated.
+            The default is './Test'
+        outfile: STRING
+            The outputfile with all of the parameters from the fitting.
+            The default is './Test_fit.json'
+
+        Returns
+        -------
+            None : NoneType
+        """
+        if self.data.ndim != 2:
+            raise IOError('data needs to be 2D for this fitting program. If you want to fit a single channel '
+                          'please use get_slice to select the channel and try again')
+        self.load_initialparameters(initpar)
+        self.create_gaussiankernel(lsf_sigma=None, kernelsize=4)
+        self.kernel = self.kernel[0, :]
+        if rms is None:
+            self.variance = np.full_like(self.data, self.calculate_sigma() ** 2)
+        else:
+            self.variance = np.full_like(self.data, rms ** 2)
+        if regular is ():
+            regular = (int(self.data.shape[1] / 2), int(self.data.shape[0] / 2))
+        self.create_maskarray(sampling=sampling, regular=regular, sigma=sigma, nblobs=nblobs)
+        kwargs = {'mcmcmap': self.mcmcmap, 'data': self.data, 'initpar': initpar,
+                  'beam_area': self.beam['BAREA_PIX'], 'par': self.par,
+                  'kernel': self.kernel, 'variance': self.variance, 'maskarray': self.maskarray,
+                  '2dmodelname': '__' + modelname + '__'}
+        # load the hdf5 backend if filename is specified
+        if mcmcfilename is not None:
+            if mcmcfilename[-5:] != '.hdf5':
+                mcmcfilename = mcmcfilename + '.hdf5'
+            backend = emcee.backends.HDFBackend(mcmcfilename)
+        else:
+            backend = None
+        # calculate the intial probability, if it is too small then exit
+        init_prob = __get_2dposterior__(self.mcmcpar, **kwargs)
+        if np.isinf(init_prob):
+            raise ValueError('Initial parameters yield zero probability.' +
+                             ' Please choose other initial parameters.')
+        print('Intial probability is: {}'.format(init_prob))
+        # define the sampler
+        os.environ["OMP_NUM_THREADS"] = "1"
+        with Pool(nproc) as pool:
+            sampler = emcee.EnsembleSampler(nwalkers, len(self.mcmcmap), __get_2dposterior__, pool=pool,
+                                            backend=backend, kwargs=kwargs)
+            # initiate the walkers
+            p0 = [(1 + 0.02 * np.random.rand(len(self.mcmcmap))) * self.mcmcpar for _walker in range(nwalkers)]
+            # run the mcmc chain
+            sampler.run_mcmc(p0, nsteps, progress=True)
+        # Store the results
+        self.mcmcarray = np.transpose(sampler.chain, axes=(1, 0, 2))
+        self.mcmclnprob = np.transpose(sampler.lnprobability, axes=(1, 0))
+        # create the chain plot QA
+        make_mcmcchainfigure(self, plotfig=plotroot + '_mcmcchain.pdf')
+        self.get_chainresults(reload_model=False)
+        self.update_parameters(self.chainpar['MedianArray'])
+        self.model = eval(kwargs['2dmodelname'])(**kwargs)
+        self.residual = self.data - self.model
+        # create the corner plot QA
+        make_cornerfigure(self, plotfig=plotroot + '_corner.pdf')
+        # create the data, model and residual QA
+        make_2dmodelfigure(self, plotfig=plotroot + '_2dmodelfit.pdf')
+        for x in self.chainpar:
+            if x == 'MedianArray' or x == 'BestArray':
+                continue
+            if self.chainpar[x]['Unit'] is not None:
+                self.chainpar[x]['Unit'] = self.chainpar[x]['Unit'].to_string()
+            if self.chainpar[x]['Conversion'] is not None:
+                self.chainpar[x]['Conversion'] = self.chainpar[x]['Conversion'].to_string()
+        with open(outfile, "w") as of:
+            json.dump(self.chainpar, of, indent=4)
+
     def __calculate_loglikelihood__(self):
         """
         Calculate the log likelihood.
@@ -692,7 +854,7 @@ class QubeFit(Qube):
 
 def __lnprob__(parameters, **kwargs):
     """
-    Calculate the log probability of the data and model.
+    Calculate the log probability (posterior) of the data and model.
 
     This will calculate the log-probability of the model compared
     to the data. It will either use the ks-test approach to calculate the
@@ -737,8 +899,8 @@ def __get_priorlnprob__(parameters, **kwargs):
         else:
             loc = kwargs['initpar'][key]['Dloc']
             scale = kwargs['initpar'][key]['Dscale']
-
-        lnprior.append(eval(kwargs['initpar'][key]['Dist']).logpdf(parameter, loc=loc, scale=scale))
+        log_prior = eval(kwargs['initpar'][key]['Dist']).logpdf(parameter, loc=loc, scale=scale) + np.log(scale)
+        lnprior.append(log_prior)
     return np.sum(lnprior)
 
 
@@ -749,7 +911,7 @@ def __get_lnprob__(residual, **kwargs):
     This function will calculate the probability for the residual. Several
     approaches can be defined using the kwargs['ProbMethod']. The most stable
     and recommended approach is the standard chi-squared. One can also try
-    the bootstrap methods, which have been stested less, but appear to work
+    the bootstrap methods, which have been tested less, but appear to work
     decent.
 
     'ChiSq' likelihood function is calculated using the approach:
@@ -849,17 +1011,21 @@ def __get_regulargrid__(shape, kernelarea, sampling, center):
     # approximate scalelength for the points in pixels
     r = np.sqrt(kernelarea * 4 * np.log(2) / np.pi) / sampling
     # xarray
-    tx = np.zeros(shape[2])
-    xidx = np.arange(center[0] - r * shape[2], center[0] + r * shape[2], r)
-    xidx = xidx[(xidx > 0) & (xidx < shape[2])].astype(int)
+    tx = np.zeros(shape[-1])
+    xidx = np.arange(center[0] - r * shape[-1], center[0] + r * shape[-1], r)
+    xidx = xidx[(xidx > 0) & (xidx < shape[-1])].astype(int)
     tx[xidx] = 1
-    x = np.tile(tx[np.newaxis, np.newaxis, :], (shape[0], shape[1], 1))
     # yarray
-    ty = np.zeros(shape[1])
-    yidx = np.arange(center[1] - r * shape[1], center[1] + r * shape[1], r)
-    yidx = yidx[(yidx > 0) & (yidx < shape[1])].astype(int)
+    ty = np.zeros(shape[-2])
+    yidx = np.arange(center[1] - r * shape[-2], center[1] + r * shape[-2], r)
+    yidx = yidx[(yidx > 0) & (yidx < shape[-2])].astype(int)
     ty[yidx] = 1
-    y = np.tile(ty[np.newaxis, :, np.newaxis], (shape[0], 1, shape[2]))
+    if len(shape) == 3:
+        x = np.tile(tx[np.newaxis, np.newaxis, :], (shape[-3], shape[-2], 1))
+        y = np.tile(ty[np.newaxis, :, np.newaxis], (shape[-3], 1, shape[-1]))
+    else:
+        x = np.tile(tx[np.newaxis, :], (shape[-2], 1))
+        y = np.tile(tx[:, np.newaxis], (1, shape[-1]))
     # final mask
     mask = x * y
     return mask
@@ -886,3 +1052,71 @@ def __get_sigmamask__(data, variance, kernel, sigma, nblobs, fmaskgrow):
         mask = convolve(mask, kernel)
         mask = np.where(mask < fmaskgrow, 0, 1)
     return mask
+
+
+def __get_2dposterior__(mcmc_pars, **kwargs):
+    # calculate the log prior:
+    prior_lnprob = __get_priorlnprob__(mcmc_pars, **kwargs)
+    if not np.isfinite(prior_lnprob):
+        return prior_lnprob
+    # update the parameters
+    __update_parameters__(mcmc_pars, **kwargs)
+    # create the model and sample
+    model = eval(kwargs['2dmodelname'])(**kwargs)
+    model_sample = model[np.where(kwargs['maskarray'])] * 1E3
+    data_sample = kwargs['data'][np.where(kwargs['maskarray'])] * 1E3
+    variance_sample = kwargs['variance'][np.where(kwargs['maskarray'])] * 1E6
+    # calculate the log-likelihood
+    ln_chisq = np.nansum(np.square(data_sample - model_sample) / variance_sample + np.log(2 * np.pi * variance_sample))
+    nyquist = kwargs['beam_area'] * np.log(2) / 4
+    lnprob = -0.5 * ln_chisq / nyquist
+    return lnprob + prior_lnprob
+
+
+def __gaussian2d__(**kwargs):
+    idx = np.indices(kwargs['data'].shape)
+    a, x, y = kwargs['par']['A'], kwargs['par']['x'], kwargs['par']['y']
+    sig_x, sig_y, theta = kwargs['par']['sig_x'], kwargs['par']['sig_y'], kwargs['par']['theta']
+    return convolve(Gaussian2D(a, x, y, sig_x, sig_y, theta)(idx[1], idx[0]), kwargs['kernel'])
+
+
+def __sersic2d__(**kwargs):
+    idx = np.indices(kwargs['data'].shape)
+    a, x, y, n = kwargs['par']['A'], kwargs['par']['x'], kwargs['par']['y'], kwargs['par']['n']
+    r, e, theta = kwargs['par']['r'], kwargs['par']['e'], kwargs['par']['theta']
+    return convolve(Sersic2D(a, r, n, x, y, e, theta)(idx[1], idx[0]), kwargs['kernel'])
+
+
+def __coresersic2d__(**kwargs):
+    idx = np.indices(kwargs['data'].shape)
+    a, x, y, n = kwargs['par']['A'], kwargs['par']['x'], kwargs['par']['y'], kwargs['par']['n']
+    r, e, theta = kwargs['par']['r'], kwargs['par']['e'], kwargs['par']['theta']
+    r_b, gamma = kwargs['par']['r_b'], kwargs['par']['gamma']
+    return convolve(CoreSersic2D(a, r, n, x, y, e, theta, r_b, gamma)(idx[1], idx[0]), kwargs['kernel'])
+
+
+class CoreSersic2D(Fittable2DModel):
+    amplitude = Parameter(default=1, description="Surface brightness at r_eff")
+    r_eff = Parameter(default=1, description="Effective (half-light) radius")
+    n = Parameter(default=4, description="Sersic Index")
+    x_0 = Parameter(default=0, description="X position of the center")
+    y_0 = Parameter(default=0, description="Y position of the center")
+    ellip = Parameter(default=0, description="Ellipticity")
+    theta = Parameter(default=0.0, description="Rotation angle either as a float (in radians) or a |Quantity| angle")
+    r_b = Parameter(default=0.5, description="Break radius")
+    gamma = Parameter(default=0.0, description="Inner power slope")
+
+    @classmethod
+    def evaluate(cls, x, y, amplitude, r_eff, n, x_0, y_0, ellip, theta, r_b, gamma, c=0):
+        """Two dimensional CoredSersic profile function."""
+        bn = gammaincinv(2.0 * n, 0.5)
+        cos_theta = np.cos(theta)
+        sin_theta = np.sin(theta)
+        x_maj = np.abs((x - x_0) * cos_theta + (y - y_0) * sin_theta)
+        x_min = np.abs(-(x - x_0) * sin_theta + (y - y_0) * cos_theta)
+        b = (1 - ellip) * r_eff
+        expon = 2.0 + c
+        inv_expon = 1.0 / expon
+        z = ((x_maj / r_eff) ** expon + (x_min / b) ** expon) ** inv_expon
+        return np.where(r_eff * z < r_b, amplitude * (r_b / (r_eff * z + 1E-10))**gamma,
+                        amplitude * np.exp(-bn * ((z ** (1 / n)) - (r_b / r_eff) ** (1 / n))))
