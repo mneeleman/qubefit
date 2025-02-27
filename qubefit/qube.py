@@ -243,8 +243,7 @@ class Qube(object):
                     kwargs['ax'] = ax
                     kwargs['channel'] = channel
                 # fit the data and get sigma
-                goodidx = np.where((data != 0) * (np.isfinite(data)))
-                if goodidx != np.array([]):
+                if np.any(data != 0 * np.isfinite(data)):
                     g = __fit_gaussian__(data, **kwargs)
                     sigma.append(g.stddev.value)
                     if plot:
@@ -263,7 +262,6 @@ class Qube(object):
         # convert sigma to a full array the size of the original data
         # and upgrade it to a full Qube
         if fullarray:
-            temp_sigma = copy.deepcopy(self)
             if sigma.shape != self.data.shape[-3]:
                 temp_sigma = self.get_slice(zindex=channels)
             else:
