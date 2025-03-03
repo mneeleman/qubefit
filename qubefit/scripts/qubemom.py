@@ -219,7 +219,7 @@ class ApplicationWindow(QtWidgets.QWidget):
                     '{:10.7f}'.format(mmval), self))
 
         # Gaussian moment plot
-        self.gaussianmoment = QtWidgets.QCheckBox('Gaussian moment')
+        self.gaussianmoment = QtWidgets.QCheckBox('Gaussian moment using moment-0 mask')
         self.gaussianmoment.setChecked(False)
 
         # update moment button
@@ -424,23 +424,19 @@ class ApplicationWindow(QtWidgets.QWidget):
         channels = np.arange(self.mrange[0], self.mrange[1])
         for idx in np.arange(3):
             if self.momentmask[idx].isChecked():
-                tmask = self.qube.mask_region(value=self.mmaskval[idx] *
-                                              self.rmsarr)
-                tmom = tmask.calculate_moment(moment=idx,
-                                              channels=channels)
+                tmask = self.qube.mask_region(value=self.mmaskval[idx] * self.rmsarr)
+                tmom = tmask.calculate_moment(moment=idx, channels=channels)
             else:
-                tmom = self.qube.calculate_moment(moment=idx,
-                                                  channels=channels)
+                tmom = self.qube.calculate_moment(moment=idx, channels=channels)
             if idx == 0:
                 self.mom0rms = tmom.calculate_sigma()
             self.mom[idx] = tmom.data
         if self.gaussianmoment.isChecked():
-            self.mom[1], self.mom[2] = \
-                self.qube.gaussian_moment(mom1=self.mom[1], mom2=self.mom[2])
-
-    def update_momentmask(self):
-        if True:
-            self.mask = np.where(self.mom0 > 3 * self.mom0rms, 1, 0)
+            if self.momentmask[0].isChecked():
+                tmask = self.qube.mask_region(value=self.mmaskval[0] * self.rmsarr, applymask=False)
+                self.mom[1], self.mom[2] = self.qube.gaussian_moment(mom1=self.mom[1], mom2=self.mom[2], mask=tmask)
+            else:
+                self.mom[1], self.mom[2] = self.qube.gaussian_moment(mom1=self.mom[1], mom2=self.mom[2])
 
     def select_data(self, button):
         if button == 'Channels':

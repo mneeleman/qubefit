@@ -480,8 +480,8 @@ class Qube(object):
         mom.__fix_beam__()
         return mom
 
-    def gaussian_moment(self, mom1=None, mom2=None, channels=None,
-                        use_model=False, return_amp=False, **kwargs):
+    def gaussian_moment(self, mom1=None, mom2=None, channels=None, use_model=False, return_amp=False,
+                        mask=None, **kwargs):
         """
         Calculate the Gaussian 'moments' of the cube.
 
@@ -525,6 +525,8 @@ class Qube(object):
             Because the mom1 returns the center and the mom2 return the width
             of the Gaussian. This will allow a reconstruction of the Gaussian at
             each pixel.
+        mask: np.array, optional
+            If given it is a Boolean array defining the mask to use.
         **kwargs : VARIED , optional
             This method will take in the keywords defined in the method
             get_velocity. In particular the convention keyword which can
@@ -549,6 +551,8 @@ class Qube(object):
         # slice if wanted
         if channels is not None:
             data = data.get_slice(zindex=channels)
+        if mask is None:
+            mask = np.ones_like(data.data[0, :, :])
         # the guesses:
         if return_amp:
             amp = data.calculate_moment(moment=0, use_model=use_model)
@@ -563,9 +567,10 @@ class Qube(object):
             for jj in np.arange(mom1.shape[-2]):
                 row_data = data.model[:, jj, ii] if use_model else data.data[:, jj, ii]
                 isfin = np.isfinite(row_data)
-                if np.sum(isfin) > 3:
+                if np.sum(isfin) > 3 and mask[ii, jj]:
                     gausspar = [np.nanmax(row_data), mom1.data[jj, ii], mom2.data[jj, ii]]
-                    gausspar[2] = 100 if np.isnan(gausspar[2]) else gausspar[2]
+                    gausspar[1] = np.median(vel_array[isfin]) if np.isnan(gausspar[1]) else gausspar[1]
+                    gausspar[2] = data.get_velocitywidth() if np.isnan(gausspar[2]) else gausspar[2]
                     g_init = models.Gaussian1D(amplitude=gausspar[0], mean=gausspar[1], stddev=gausspar[2])
                     fit_g = fitting.TRFLSQFitter()
                     g = fit_g(g_init, vel_array[isfin], row_data[isfin])
@@ -578,7 +583,6 @@ class Qube(object):
                         amp.data[jj, ii] = np.nan
                     mom1.data[jj, ii] = np.nan
                     mom2.data[jj, ii] = np.nan
-
         if return_amp:
             return amp, mom1, mom2
         else:
