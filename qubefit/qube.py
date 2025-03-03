@@ -552,6 +552,7 @@ class Qube(object):
         if channels is not None:
             data = data.get_slice(zindex=channels)
         if mask is None:
+            print(data.data.shape)
             mask = np.ones_like(data.data[0, :, :])
         # the guesses:
         if return_amp:
@@ -567,7 +568,7 @@ class Qube(object):
             for jj in np.arange(mom1.shape[-2]):
                 row_data = data.model[:, jj, ii] if use_model else data.data[:, jj, ii]
                 isfin = np.isfinite(row_data)
-                if np.sum(isfin) > 3 and mask[ii, jj]:
+                if np.sum(isfin) > 3 and mask[jj, ii] == 1:
                     gausspar = [np.nanmax(row_data), mom1.data[jj, ii], mom2.data[jj, ii]]
                     gausspar[1] = np.median(vel_array[isfin]) if np.isnan(gausspar[1]) else gausspar[1]
                     gausspar[2] = data.get_velocitywidth() if np.isnan(gausspar[2]) else gausspar[2]

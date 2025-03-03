@@ -433,7 +433,7 @@ class ApplicationWindow(QtWidgets.QWidget):
             self.mom[idx] = tmom.data
         if self.gaussianmoment.isChecked():
             if self.momentmask[0].isChecked():
-                tmask = self.qube.mask_region(value=self.mmaskval[0] * self.rmsarr, applymask=False)
+                tmask = self.qube.mask_region(moment=self.mmaskval[0], applymask=False)[0, :, :]
                 self.mom[1], self.mom[2] = self.qube.gaussian_moment(mom1=self.mom[1], mom2=self.mom[2], mask=tmask)
             else:
                 self.mom[1], self.mom[2] = self.qube.gaussian_moment(mom1=self.mom[1], mom2=self.mom[2])
