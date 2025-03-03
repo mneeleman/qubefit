@@ -446,51 +446,38 @@ class Qube(object):
         """
         # init
         mom = copy.deepcopy(self)
-
         # slice if needed
         if channels is not None:
             mom = mom.get_slice(zindex=channels)
-
         # update the rest frequency in the moment header
         if restfreq is not None:
             mom.header['RESTFRQ'] = restfreq
-
         # select the array to perform the calculation on
-        if use_model:
-            array = mom.model
-        else:
-            array = mom.data
-
+        array = mom.model if use_model else mom.data
         # calculate the moment
         if moment == 0:     # 0th moment
             dv = mom.get_velocitywidth(**kwargs, as_quantity=True)
             mom.data = np.nansum(array, axis=0) * dv.value
             mom.header['BUNIT'] = mom.header['BUNIT'] + dv.unit.to_string()
         elif moment == 1:   # 1st moment
-            t0Vel = mom.get_velocity(**kwargs, as_quantity=True)
-            tVel = t0Vel.value
-            VelArr = np.tile(tVel[:, np.newaxis, np.newaxis],
-                             (1, mom.shape[1], mom.shape[2]))
+            t0_vel = mom.get_velocity(**kwargs, as_quantity=True)
+            vel_array = np.tile(t0_vel.value[:, np.newaxis, np.newaxis], (1, mom.shape[1], mom.shape[2]))
             tmom0 = np.nansum(array, axis=0)
-            mom.data = np.nansum(VelArr * array, axis=0) / tmom0
-            mom.header['BUNIT'] = t0Vel.unit.to_string()
+            mom.data = np.nansum(vel_array * array, axis=0) / tmom0
+            mom.header['BUNIT'] = t0_vel.unit.to_string()
         elif moment == 2:   # 2nd moment
-            t0Vel = mom.get_velocity(**kwargs, as_quantity=True)
-            tVel = t0Vel.value
-            VelArr = np.tile(tVel[:, np.newaxis, np.newaxis],
-                             (1, mom.shape[1], mom.shape[2]))
+            t0_vel = mom.get_velocity(**kwargs, as_quantity=True)
+            vel_array = np.tile(t0_vel.value[:, np.newaxis, np.newaxis], (1, mom.shape[1], mom.shape[2]))
             tmom0 = np.nansum(array, axis=0)
-            tmom1 = np.nansum(VelArr * array, axis=0) / tmom0
-            tmom2 = array * np.square(VelArr - tmom1)
-            mom.data = np.sqrt(np.nansum(tmom2, axis=0) / tmom0)
-            mom.header['BUNIT'] = t0Vel.unit.to_string()
+            tmom1 = np.nansum(vel_array * array, axis=0) / tmom0
+            tmom2 = np.nansum(array * np.square(vel_array - tmom1), axis=0) / tmom0
+            mom.data = np.where(tmom2 > 0, np.sqrt(tmom2), np.nan)
+            mom.header['BUNIT'] = t0_vel.unit.to_string()
         else:
             raise NotImplementedError("Moment not supported - yet.")
-
         # fix the header and update beam
         mom.__fix_header__()
         mom.__fix_beam__()
-
         return mom
 
     def gaussian_moment(self, mom1=None, mom2=None, channels=None,
@@ -533,6 +520,11 @@ class Qube(object):
         use_model : BOOLEAN, optional
             If set to true, the moment will be calculated from the model
             data attribute instead of the data attribute. The default is False.
+        return_amp: BOOLEAN, optional
+            If set to true the amplitude for each Gaussian fit is also returned.
+            Because the mom1 returns the center and the mom2 return the width
+            of the Gaussian. This will allow a reconstruction of the Gaussian at
+            each pixel.
         **kwargs : VARIED , optional
             This method will take in the keywords defined in the method
             get_velocity. In particular the convention keyword which can
@@ -540,6 +532,10 @@ class Qube(object):
 
         Returns
         -------
+        amp: Qube, optional
+            A qube instance which contains the amplitude of the Gaussian. This
+            can be used with mom1 and mom2 to recover a modelled mom0 or recover
+            the Gaussians at each pixel.
         mom1 : Qube
             A qube instance where the data attribute contains the velocity
             field estimate. Typically in km/s.
@@ -550,11 +546,9 @@ class Qube(object):
         """
         # init
         data = copy.deepcopy(self)
-
         # slice if wanted
         if channels is not None:
             data = data.get_slice(zindex=channels)
-
         # the guesses:
         if return_amp:
             amp = data.calculate_moment(moment=0, use_model=use_model)
@@ -562,35 +556,28 @@ class Qube(object):
             mom1 = data.calculate_moment(moment=1, use_model=use_model)
         if mom2 is None:
             mom2 = data.calculate_moment(moment=2, use_model=use_model)
-
         # get velocity array
-        VelArr = data.get_velocity(**kwargs)
-
-        # now go over each spatial pixel and compute moments
+        vel_array = data.get_velocity(**kwargs)
+        # now go over each spatial pixel and compute "moments"
         for ii in np.arange(mom1.shape[-1]):
             for jj in np.arange(mom1.shape[-2]):
-                if use_model:
-                    RowData = data.model[:, jj, ii]
-                else:
-                    RowData = data.data[:, jj, ii]
-                isfin = np.isfinite(RowData)
+                row_data = data.model[:, jj, ii] if use_model else data.data[:, jj, ii]
+                isfin = np.isfinite(row_data)
                 if np.sum(isfin) > 3:
-                    gausspar = [np.nanmax(RowData), mom1.data[jj, ii],
-                                mom2.data[jj, ii]]
-                    g_init = models.Gaussian1D(amplitude=gausspar[0],
-                                               mean=gausspar[1],
-                                               stddev=gausspar[2])
-                    fit_g = fitting.LevMarLSQFitter()
-                    g = fit_g(g_init, VelArr[isfin], RowData[isfin])
+                    gausspar = [np.nanmax(row_data), mom1.data[jj, ii], mom2.data[jj, ii]]
+                    gausspar[2] = 100 if np.isnan(gausspar[2]) else gausspar[2]
+                    g_init = models.Gaussian1D(amplitude=gausspar[0], mean=gausspar[1], stddev=gausspar[2])
+                    fit_g = fitting.TRFLSQFitter()
+                    g = fit_g(g_init, vel_array[isfin], row_data[isfin])
                     mom1.data[jj, ii] = g.mean.value
                     mom2.data[jj, ii] = g.stddev.value
                     if return_amp:
                         amp.data[jj, ii] = g.amplitude.value
                 else:
                     if return_amp:
-                        amp.data[jj, ii] = np.NaN
-                    mom1.data[jj, ii] = np.NaN
-                    mom2.data[jj, ii] = np.NaN
+                        amp.data[jj, ii] = np.nan
+                    mom1.data[jj, ii] = np.nan
+                    mom2.data[jj, ii] = np.nan
 
         if return_amp:
             return amp, mom1, mom2

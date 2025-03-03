@@ -664,7 +664,7 @@ class QubeFit(Qube):
             raise ValueError('qubefit: Probability method is not defined: {}'.format(method))
 
     def fit_2dmodel(self, initpar, modelname='gaussian2d', mcmcfilename=None, nwalkers=50, nsteps=100, sampling=2,
-                    regular=(), rms=None, sigma=2, nblobs=1, nproc=7, plotroot='./Test', outfile='./Test_fit.json'):
+                    regular=None, rms=None, sigma=2, nblobs=1, nproc=7, plotroot='./Test', outfile='./Test_fit.json'):
         """
         Fits a 2d model to the data.
 
@@ -757,7 +757,7 @@ class QubeFit(Qube):
             self.variance = np.full_like(self.data, self.calculate_sigma() ** 2)
         else:
             self.variance = np.full_like(self.data, rms ** 2)
-        if regular is ():
+        if regular is None:
             regular = (int(self.data.shape[1] / 2), int(self.data.shape[0] / 2))
         self.create_maskarray(sampling=sampling, regular=regular, sigma=sigma, nblobs=nblobs)
         kwargs = {'mcmcmap': self.mcmcmap, 'data': self.data, 'initpar': initpar,
