@@ -1279,7 +1279,7 @@ def __fit_gaussian__(data, doguess=True, gausspar=None, bins=None,
         gausspar[0] = np.max(hist)
     # define the Gaussian model
     g_init = models.Gaussian1D(amplitude=gausspar[0], mean=gausspar[1], stddev=gausspar[2])
-    fit_g = fitting.LevMarLSQFitter()
+    fit_g = fitting.TRFLSQFitter()
     g = fit_g(g_init, xval, hist)
     # make a plot of the Gaussian fitting
     if ax is not None:
@@ -1309,7 +1309,7 @@ def __correct_flux__(flux, vel, limits, n_degree=2):
     polynomial by default. The fit will ignore the region within the limits.
     """
     finit = models.Polynomial1D(n_degree)
-    fitter = fitting.LevMarLSQFitter()
+    fitter = fitting.TRFLSQFitter()
     ofitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=3, sigma=3.0)
     fit_idx = (vel < limits[0]) + (vel > limits[1])
     _o_fit, o_fit_data = ofitter(finit, vel[fit_idx], flux[fit_idx])
