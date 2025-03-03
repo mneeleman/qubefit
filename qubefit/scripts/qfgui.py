@@ -94,7 +94,7 @@ class ApplicationWindow(QtWidgets.QWidget):
         self.chanselect = QtWidgets.QGroupBox('Channel Select Controls')
 
         # create the channel slider
-        self.channelslider = QtWidgets.QScrollBar(QtCore.Qt.Horizontal, self)
+        self.channelslider = QtWidgets.QScrollBar(QtCore.Qt.Orientation.Horizontal, self)
         self.channelslider.setRange(0, self.nchannels - 1)
         self.channelslider.valueChanged.connect(self.channelslider_changed)
 
@@ -406,13 +406,13 @@ def main():
             sys.argv[1] = sys.argv[1][:-3]
         AppWin = ApplicationWindow(sys.argv[1])
         AppWin.show()
-        sys.exit(app.exec_())
+        sys.exit(app.exec())
     elif len(sys.argv) == 3:
         if sys.argv[1].endswith('.py'):
             sys.argv[1] = sys.argv[1][:-3]
         AppWin = ApplicationWindow(sys.argv[1], sys.argv[2])
         AppWin.show()
-        sys.exit(app.exec_())
+        sys.exit(app.exec())
     else:
         print(sys.argv)
         print('Too many arguments supplied to the funcion.')

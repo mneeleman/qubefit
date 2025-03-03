@@ -82,7 +82,7 @@ class ApplicationWindow(QtWidgets.QWidget):
         self.chanselect = QtWidgets.QGroupBox('Channel Select Controls')
 
         # create the channel slider
-        self.channelslider = QtWidgets.QScrollBar(QtCore.Qt.Horizontal, self)
+        self.channelslider = QtWidgets.QScrollBar(QtCore.Qt.Orientation.Horizontal, self)
         self.channelslider.setRange(0, self.nchannels - 1)
         self.channelslider.valueChanged.connect(self.channelslider_changed)
 
@@ -528,7 +528,7 @@ def main():
     else:
         AppWin = ApplicationWindow(sys.argv[1])
         AppWin.show()
-        sys.exit(app.exec_())
+        sys.exit(app.exec())
 
 
 def __arrtostr__(array):
