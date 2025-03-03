@@ -910,8 +910,8 @@ class Qube(object):
         the median distance between them (i.e., width of the velocity channel).
         It inherits the same keywords as the get_velocity method.
         """
-        VelArr = self.get_velocity(**kwargs)
-        return np.median(np.abs(VelArr - np.roll(VelArr, 1)))
+        vel_array = self.get_velocity(**kwargs)
+        return np.median(np.abs(vel_array - np.roll(vel_array, 1)))
 
     def _generative_moment_(self, variance=None, cwidths=np.arange(1, 21, 1)):
         """
@@ -1030,7 +1030,6 @@ class Qube(object):
                     self.data.shape[self.data.ndim-cnt-1]):
                 self.header[axis] = self.data.shape[self.data.ndim-cnt-1]
         self.header['NAXIS'] = self.data.ndim
-
         # remove the fourth dimension if not needed
         if self.data.ndim <= 3:
             keys = ['PC04_01', 'PC04_02', 'PC04_03', 'PC04_04',
@@ -1040,7 +1039,6 @@ class Qube(object):
                     'PC4_2', 'PC4_3', 'PC1_4', 'PC2_4', 'PC3_4', 'PC4_4']
             for key in keys:
                 self.header.remove(key, ignore_missing=True)
-
         # remove the third dimension if not needed
         if self.data.ndim <= 2:
             keys = ['PC03_01', 'PC03_02', 'PC03_03', 'PC01_03',
@@ -1064,7 +1062,6 @@ class Qube(object):
                     'NOEMA': self.__NOEMA__, 'ESO-VLT-U4': self.__MUSE__,
                     'NGVLA': self.__NGVLA__, 'VLA': self.__VLA__,
                     'VLBA': self.__VLBA__}
-
         if 'INSTRUME' in self.header and 'TELESCOP' not in self.header:
             self.header['TELESCOP'] = self.header['INSTRUME']
         inst_red[self.header['TELESCOP']]()
@@ -1107,13 +1104,11 @@ class Qube(object):
         """Fix for KCWI."""
         self.instr = 'KCWI'
         # add RESTFRQ keyword to the header
-        restfreq = const.c .value / (self.header['RESTWAV'] * 1E-10)
+        restfreq = const.c.value / (self.header['RESTWAV'] * 1E-10)
         self.header.set('RESTFRQ', restfreq)
-
         #  add CDELT3 keyword and convert values to frequency
         cdelt3 = self.header['CD3_3']
         self.header.set('CDELT3', cdelt3)
-
         # add some 'fake' beam parameters these should be first
         # updated to the seeing values of the data.
         self.header.set('BMAJ', 1.0 / 3600.)
@@ -1124,13 +1119,11 @@ class Qube(object):
         """Fix for Palomar CWI."""
         self.instr = 'PCWI_IDL'
         # add RESTFRQ keyword to the header
-        restfreq = const.c .value / (self.header['RESTWAV'] * 1E-10)
+        restfreq = const.c.value / (self.header['RESTWAV'] * 1E-10)
         self.header.set('RESTFRQ', restfreq)
-
         #  add CDELT3 keyword and convert values to frequency
         cdelt3 = self.header['CD3_3']
         self.header.set('CDELT3', cdelt3)
-
         # add some 'fake' beam parameters these should be first
         # updated to the seeing values of the data.
         self.header.set('BMAJ', 1.0 / 3600.)
@@ -1141,14 +1134,12 @@ class Qube(object):
         """Fix for MUSE."""
         self.instr = 'MUSE_PIPE'
         # add RESTFRQ keyword to the header
-        restfreq = const.c .value / (self.header['RESTWAV'] * 1E-10)
+        restfreq = const.c.value / (self.header['RESTWAV'] * 1E-10)
         self.header.set('RESTFRQ', restfreq)
-
         #  add CDELT3 keyword and convert values to frequency
         if 'CD3_3' in self.header:
             cdelt3 = self.header['CD3_3']
             self.header.set('CDELT3', cdelt3)
-
         # add some 'fake' beam parameters these should be first
         # updated to the seeing values of the data.
         self.header.set('BMAJ', 1.0 / 3600.)
@@ -1172,7 +1163,6 @@ class Qube(object):
         # rename the rest frequency (if needed)
         if 'RESTFREQ' in self.header and 'RESTFRQ' not in self.header:
             self.header.rename_keyword('RESTFREQ', 'RESTFRQ')
-
         # look for a line like this in the history to get beam information
         # HISTORY AIPS CLEAN  BMAJ=1.7599E-03  BMIN=1.5740E-03  BPA=2.61
         for line in self.header['History']:
@@ -1258,8 +1248,7 @@ def __fit_gaussian__(data, doguess=True, gausspar=None, bins=None,
         bins = np.linspace(-5*gausspar[2], 5*gausspar[2], nbins)
     else:
         if bins is None or gausspar is None:
-            raise ValueError('Please set the bin range and/or approximate' +
-                             'Gaussian values.')
+            raise ValueError('Please set the bin range and/or approximate Gaussian values.')
     # create a histogram
     hist, txval = np.histogram(data, bins=bins)
     xval = (txval[:-1]+txval[1:]) / 2
@@ -1302,5 +1291,4 @@ def __correct_flux__(flux, vel, limits, n_degree=2):
     ofitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=3, sigma=3.0)
     fit_idx = (vel < limits[0]) + (vel > limits[1])
     _o_fit, o_fit_data = ofitter(finit, vel[fit_idx], flux[fit_idx])
-
     return flux - o_fit_data(vel)
