@@ -208,10 +208,7 @@ class Qube(object):
         # either 2D or 3D case
         if self.data.ndim == 2:
             # parse the data to be fitted
-            if use_residual and hasattr(self, 'residual'):
-                data = self.residual
-            else:
-                data = self.data
+            data = self.residual if use_residual and hasattr(self, 'residual') else self.data
             if ignorezero:
                 data = data[np.where(data != 0)]
             if plot:  # if qa plot is wanted
@@ -232,10 +229,8 @@ class Qube(object):
                 pdf = matplotlib.backends.backend_pdf.PdfPages(plotfile)
             sigma = []
             for channel in channels:
-                if use_residual and hasattr(self, 'residual'):
-                    data = self.residual[channel, :, :]
-                else:
-                    data = self.data[channel, :, :]
+                data = (self.residual[channel, :, :] if use_residual and hasattr(self, 'residual') else
+                        self.data[channel, :, :])
                 if ignorezero:
                     data = data[np.where(data != 0)]
                 if plot:
@@ -258,14 +253,9 @@ class Qube(object):
             sigma = np.array(sigma)
         else:
             raise ValueError('data dimensions need to be either 2D or 3D.')
-
-        # convert sigma to a full array the size of the original data
-        # and upgrade it to a full Qube
+        # convert sigma to a full array the size of the original data and upgrade it to a full Qube
         if fullarray:
-            if sigma.shape != self.data.shape[-3]:
-                temp_sigma = self.get_slice(zindex=channels)
-            else:
-                temp_sigma = copy.deepcopy(self)
+            temp_sigma = self.get_slice(zindex=channels) if sigma.shape != self.data.shape[-3] else copy.deepcopy(self)
             temp_sigma.data = np.tile(sigma[:, np.newaxis, np.newaxis], (1, self.data.shape[-2], self.data.shape[-1]))
             sigma = temp_sigma
         return sigma
@@ -328,7 +318,6 @@ class Qube(object):
         # init
         mask_region = copy.deepcopy(self)
         msk = np.ones_like(mask_region.data)
-
         # Ellipse: [xcntr,ycntr,rmaj,rmin,angle]
         if ellipse is not None:
             # create indices array
@@ -345,7 +334,6 @@ class Qube(object):
             tmask = np.where(((rmaj / size[0])**2 + (rmin / size[1])**2) <= 1,
                              1, np.nan)
             msk = msk * tmask
-
         # Rectangle: [xb, yb, xt, yt]
         if rectangle is not None:
             # create indices array
@@ -355,7 +343,6 @@ class Qube(object):
                              (tidx[-2, :] >= rectangle[1] - rectangle[3]) &
                              (tidx[-2, :] <= rectangle[1] + rectangle[3]))
             msk = msk * tmask
-
         # Value: data > value
         if value is not None:  # reject values below this value
             if (type(value) is float or type(value) is int or
@@ -367,7 +354,6 @@ class Qube(object):
                     tval[chan, :, :] = value[chan]
             tmask = np.where(mask_region.data >= tval, 1, np.nan)
             msk = msk * tmask
-
         # Moment: mom0 > moment
         if moment is not None:
             # create a temporary moment-zero image
@@ -377,11 +363,9 @@ class Qube(object):
             moment_mask = np.where(mom0.data >= moment_mask_value, 1, np.nan)
             tmask = np.tile(moment_mask, (mask_region.data.shape[0], 1, 1))
             msk = msk * tmask
-
         # Set mask manually
         if mask is not None:
             msk = msk * mask
-
         # apply the mask
         if applymask:
             mask_region.data = mask_region.data * msk
