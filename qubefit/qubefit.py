@@ -159,14 +159,14 @@ class QubeFit(Qube):
         # Check that the beam attribute has been defined
         if not hasattr(self, 'beam'):
             raise AttributeError('Beam attribute must be defined to create gaussian kernel')
-        # define some parameters for the beam
+        # define some parameters for creating the kernel
         bmaj = self.beam['BMAJ'] / np.sqrt(8 * np.log(2)) / np.abs(self.header['CDELT1'])
         bmin = self.beam['BMIN'] / np.sqrt(8 * np.log(2)) / np.abs(self.header['CDELT1'])
         theta = np.pi / 2. + np.radians(self.beam['BPA'])
         kernel_area = self.beam['BAREA_PIX']
         if type(bmaj) is float:
             raise NotImplementedError("Beam should be an array")
-        # Here decide which channel(s) to use for generating the kernel
+        # 2D and 3D images are handled seperately
         if len(bmaj) == 1:  # 2D Image
             xsize = 2 * np.ceil(kernelsize * bmaj) + 1
             ysize = 2 * np.ceil(kernelsize * bmaj) + 1
@@ -239,20 +239,16 @@ class QubeFit(Qube):
         """
         self.initpar = parameters
         for key in self.initpar.keys():
-
             if self.initpar[key]['Conversion'] is not None:
-                self.par[key] = (self.initpar[key]['Value'] *
-                                 self.initpar[key]['Unit'] /
+                self.par[key] = (self.initpar[key]['Value'] * self.initpar[key]['Unit'] /
                                  self.initpar[key]['Conversion']).value
             else:
                 self.par[key] = self.initpar[key]['Value']
-
             if not self.initpar[key]['Fixed']:
                 self.mcmcpar.append(self.par[key])
                 self.mcmcmap.append(key)
-                self.priordist.append(eval(self.initpar[key]['Dist'])
-                                      (loc=self.initpar[key]['Dloc'],
-                                      scale=self.initpar[key]['Dscale']))
+                self.priordist.append(eval(self.initpar[key]['Dist'])(loc=self.initpar[key]['Dloc'],
+                                                                      scale=self.initpar[key]['Dscale']))
         # store the number of free variables of the mcmc process
         self.mcmcdim = len(self.mcmcpar)
 
@@ -337,17 +333,13 @@ class QubeFit(Qube):
             backend = emcee.backends.HDFBackend(filename)
         else:
             backend = None
-
         # intiate the model (redo if already done)
         self.create_model()
-
         # create the bootstrap array (do not redo if already done)
         if not hasattr(self, 'maskarray'):
             self.create_maskarray()
-
         # define the keyword arguments for the model fitting function
         kwargs = self.__define_kwargs__()
-
         # calculate the intial probability, if it is too small (i.e., 0) then
         # the code will exit with an error
         initprob = __lnprob__(self.mcmcpar, **kwargs)
@@ -355,23 +347,18 @@ class QubeFit(Qube):
             raise ValueError('Initial parameters yield zero probability.' +
                              ' Please choose other initial parameters.')
         print('Intial probability is: {}'.format(initprob))
-
         # define the sampler
         os.environ["OMP_NUM_THREADS"] = "1"
         with Pool(nproc) as pool:
             sampler = emcee.EnsembleSampler(nwalkers, self.mcmcdim, __lnprob__, pool=pool, backend=backend,
                                             kwargs=kwargs)
-
             # initiate the walkers
             p0 = [(1 + init_frac * np.random.rand(self.mcmcdim)) * self.mcmcpar for _walker in range(nwalkers)]
-
             # run the mcmc chain
             sampler.run_mcmc(p0, nsteps, progress=True)
-
         # Now store the results into the structure (transpose is needed to agree with hdf5 structure)
         self.mcmcarray = np.transpose(sampler.chain, axes=(1, 0, 2))
         self.mcmclnprob = np.transpose(sampler.lnprobability, axes=(1, 0))
-
         # return the sampler (for testing of emcee)
         if return_sampler:
             return sampler
