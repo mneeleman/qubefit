@@ -102,7 +102,7 @@ class QubeFit(Qube):
         self.chainpar = None
         self.maskarray = []
 
-    def create_gaussiankernel(self, channels=None, lsf_sigma=None, kernelsize=4):
+    def create_gaussiankernel(self, channels=None, lsf_sigma=0.849, kernelsize=4):
         """
         Create a Gaussian kernel.
 
@@ -133,13 +133,13 @@ class QubeFit(Qube):
             channel. This option, however, is currently NOT implemented in
             the code and therefore just a single channel should be specified.
             The default is None.
-        lsf_sigma : FLOAT or NUMPY.ARRAY, optional
+        lsf_sigma : FLOAT, optional
             The width of the line spread function. Note that this is the
             sigma or square root of the variace, NOT the FWHM!. The unit for
             this value is pixels. If this is not specfied, then the LSF is
-            assumed to be neglible, which is often ok for ALMA data, which has
-            been averaged over many channels.
-            The default is None.
+            assumed to be 0.849, which assumes the data has been Hanning smoothed.
+            If set to None, it will create a 2D kernel
+            The default is 0.849
         kernelsize : FLOAT, optional
             The size of the kernel in terms of the sigma of the major axis
             in pixels (bsig). The actual size of the kernel will be a cube
@@ -158,50 +158,46 @@ class QubeFit(Qube):
         """
         # Check that the beam attribute has been defined
         if not hasattr(self, 'beam'):
-            raise AttributeError('Beam attribute must be defined to create' +
-                                 'gaussian kernel')
+            raise AttributeError('Beam attribute must be defined to create gaussian kernel')
         # define some parameters for the beam
         bmaj = self.beam['BMAJ'] / np.sqrt(8 * np.log(2)) / np.abs(self.header['CDELT1'])
         bmin = self.beam['BMIN'] / np.sqrt(8 * np.log(2)) / np.abs(self.header['CDELT1'])
-        bpa = self.beam['BPA']
-        theta = np.pi / 2. + np.radians(bpa)
-        kernel_area = bmaj * bmin * 2 * np.pi
+        theta = np.pi / 2. + np.radians(self.beam['BPA'])
+        kernel_area = self.beam['BAREA_PIX']
+        if type(bmaj) is float:
+            raise NotImplementedError("Beam should be an array")
         # Here decide which channel(s) to use for generating the kernel
-        try:
-            len(bmaj)
-        except TypeError:
-            bmaj, bmin, bpa, theta, kernel_area = [bmaj], [bmin], [bpa], [theta], [kernel_area]
-        if channels is None:
-            channels = [len(bmaj) // 2]
-        if type(channels) is int:
-            channels = [channels]
-        # create an array of LSFSigma (if needed)
-        if lsf_sigma is not None and type(lsf_sigma) is float:
-            lsf_sigma = np.full(len(bmaj), lsf_sigma)
-        # create a (list of) 2D kernel(s)
-        kernel = ()
-        for ii in channels:
-            xsize = 2 * np.ceil(kernelsize*bmaj[ii]) + 1
-            ysize = 2 * np.ceil(kernelsize*bmaj[ii]) + 1
-            twod_kernel = Gaussian2DKernel(bmaj[ii], bmin[ii], theta=theta[ii], x_size=xsize, y_size=ysize).array
-            # apply the line-spread function (if wanted)
-            if lsf_sigma is None:
-                kernel = kernel + (twod_kernel, )
-            else:
-                lsf_kernel = Gaussian1DKernel(lsf_sigma[ii]).array
-                temp_kernel = np.zeros(lsf_kernel.shape + twod_kernel.shape)
-                temp_kernel[lsf_kernel.shape[0] // 2, :, :] = twod_kernel
-                threed_kernel = convolve(temp_kernel, lsf_kernel[np.newaxis, np.newaxis, ...])
-                kernel = kernel + (threed_kernel, )
-        # select the kernel areas
-        kernel_area = [kernel_area[x] for x in channels]
-        # if a single channel is given then remove the list and force the
-        # single kernel to be 3D.
-        if len(kernel) == 1:
-            kernel = kernel[0]
-            kernel_area = kernel_area[0]
-            if kernel.ndim == 2:
-                kernel = np.array([kernel, ])
+        if len(bmaj) == 1:  # 2D Image
+            xsize = 2 * np.ceil(kernelsize * bmaj) + 1
+            ysize = 2 * np.ceil(kernelsize * bmaj) + 1
+            kernel = Gaussian2DKernel(bmaj, bmin, theta=theta, x_size=xsize, y_size=ysize).array
+        else:               # 3D Image
+            if channels is None:
+                channels = [len(bmaj) // 2]
+            elif type(channels) is int:
+                channels = [channels]
+            # create a list of kernels
+            kernel = []
+            for ii in channels:
+                xsize = 2 * np.ceil(kernelsize*bmaj[ii]) + 1
+                ysize = 2 * np.ceil(kernelsize*bmaj[ii]) + 1
+                twod_kernel = Gaussian2DKernel(bmaj[ii], bmin[ii], theta=theta[ii], x_size=xsize, y_size=ysize).array
+                # apply the line-spread function (if wanted)
+                if lsf_sigma is None:
+                    kernel.append(twod_kernel)
+                else:
+                    lsf_kernel = Gaussian1DKernel(lsf_sigma).array
+                    temp_kernel = np.zeros(lsf_kernel.shape + twod_kernel.shape)
+                    temp_kernel[lsf_kernel.shape[0] // 2, :, :] = twod_kernel
+                    threed_kernel = convolve(temp_kernel, lsf_kernel[np.newaxis, np.newaxis, ...])
+                    kernel.append(threed_kernel)
+            # select the kernel areas
+            kernel_area = [kernel_area[ii] for ii in channels]
+            # if a single channel is given then remove the list and force the single kernel to be 3D.
+            if len(kernel) == 1:
+                kernel, kernel_area = kernel[0], kernel_area[0]
+                if kernel.ndim == 2:
+                    kernel = np.array([kernel, ])
         # now assign the following attributes.
         self.kernel = kernel
         self.kernelarea = kernel_area
