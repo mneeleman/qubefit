@@ -13,6 +13,7 @@ from astropy.coordinates import SphericalRepresentation
 import astropy.units as u
 from astropy.convolution import convolve
 import copy
+from scipy.special import gammaincinv
 
 
 def ThinDisk(**kwargs):
@@ -779,8 +780,7 @@ def _Delta_(X, X0, *args):  # not recommended to use this profile
 
 
 def _Sersic_(X, X0, N, *args):
-
-    return np.exp(-(2.*N-(1./3.))*(((X/X0)**N)-1))
+    return np.exp(-1 * gammaincinv(2.0 * N, 0.5) * (X/X0) ** (1 / n) - 1.0)
 
 
 def _Sech2_(X, X0, *args):
