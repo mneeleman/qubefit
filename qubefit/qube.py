@@ -25,7 +25,7 @@ class Qube(object):
     """
 
     @classmethod
-    def from_fits(cls, fitsfile, extension=0, **kwargs):
+    def from_fits(cls, fitsfile, extension=0, header_extension=None, **kwargs):
         """
         Instantiate a Qube class from a fits file.
 
@@ -41,7 +41,12 @@ class Qube(object):
         fitsfile : STRING
             The name of the fits file to be read in.
         extension : INT, optional
-            The extension of the fots file to read in. The default is 0.
+            The extension of the fits file to read in. The default is 0.
+        header_extension : Int, optional
+            This can read a different extension for the header. This is useful
+            if the data extension does not contain the information that you
+            would need. e.g., error array read-in. The default is None, which
+            implies that the same extension as the data is used.
         **kwargs : DICT, optional
             keyword arguments that can be directly passed into the Qube class.
 
@@ -53,15 +58,19 @@ class Qube(object):
             well as several other minor data attributes.
 
         """
+        if header_extension is None:
+            header_extension = extension
         # initiate (currently blank)
         self = cls(**kwargs)
         # Open the file
         hdu = fits.open(fitsfile)
         self.data = np.squeeze(hdu[extension].data)
-        self.header = hdu[extension].header
+        self.header = hdu[header_extension].header
         self.shape = self.data.shape
         self.__fix_header__()
         # adapt the header depending on the instrument and reduction software
+        if 'TELESCOP' not in self.header:  # allow telescop in main header (e.g., JWST)
+            self.header['TELESCOP'] = hdu[0].header['TELESCOP']
         self.__instr_redux__()
         # add beam
         self.__add_beam__(hdu)
@@ -238,7 +247,7 @@ class Qube(object):
                     kwargs['ax'] = ax
                     kwargs['channel'] = channel
                 # fit the data and get sigma
-                if np.any(data != 0 * np.isfinite(data)):
+                if np.any((data != 0) * np.isfinite(data)):
                     g = __fit_gaussian__(data, **kwargs)
                     sigma.append(g.stddev.value)
                     if plot:
@@ -877,6 +886,8 @@ class Qube(object):
             Velocity = u.Quantity(Arr, unit=self.header['CUNIT3']).to('km/s')
             Freq2Vel = u.doppler_radio(RestFreq)
             FreqArr = Velocity.to(u.Hz, equivalencies=Freq2Vel)
+        elif self.header['CTYPE3'] == 'WAVE':
+            FreqArr = (const.c / (Arr * u.um)).to(u.Hz)
         else:
             raise ValueError(self.header['CTYPE3'])
 
@@ -1061,7 +1072,7 @@ class Qube(object):
                     'Hale5m': self.__PCWI__, 'Keck II': self.__KCWI__,
                     'NOEMA': self.__NOEMA__, 'ESO-VLT-U4': self.__MUSE__,
                     'NGVLA': self.__NGVLA__, 'VLA': self.__VLA__,
-                    'VLBA': self.__VLBA__}
+                    'VLBA': self.__VLBA__, 'JWST': self.__JWST__}
         if 'INSTRUME' in self.header and 'TELESCOP' not in self.header:
             self.header['TELESCOP'] = self.header['INSTRUME']
         inst_red[self.header['TELESCOP']]()
@@ -1157,6 +1168,17 @@ class Qube(object):
             self.__AIPS__()
         else:
             raise ValueError('Only VLBA/AIPS is currently supported')
+
+    def __JWST__(self):
+        """Fix for JWST"""
+        self.instr = 'JWST_PIPE'
+        # add RESTFRQ keyword to the header
+        restfreq = const.c.value / (self.header['CRVAL3'] * 1E-6)
+        self.header.set('RESTFRQ', restfreq)
+        # add some 'fake' beam parameters these should be updated to the seeing values of the data.
+        self.header.set('BMAJ', 0.2 / 3600.)
+        self.header.set('BMIN', 0.2 / 3600.)
+        self.header.set('BPA', 0.0)
 
     def __AIPS__(self):
         """Fix specific to AIPS to deal with the beam."""
