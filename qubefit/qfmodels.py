@@ -428,6 +428,87 @@ def ThinSpiral(**kwargs):
 
 
 # THE FOLLOWING PROFILES HAVE NOT BEEN TESTED AND LIKELY HAVE SOME BUGS IN THEM
+def RotatingBulge(**kwargs):
+    """
+    Create a model of a rotating dispersion-dominated bulge.
+
+    This will create a dispersion-dominated bulge model from the stored
+    parameters specified in kwargs. The bulge model is described in detail
+    in the online documentation, and uses and limitations to this model are
+    discussed there and in qubefit's reference paper. For the velocity field we
+    use a combo field that does not belong with the distribution, but is 
+    an approximation to the field of a think disk.
+
+    Parameters
+    ----------
+    **kwargs : Dictionary
+        The kwargs dictionary contains all of the information to run the
+        fitting procedure. It consists out of several nested dictionaries.
+
+        'mstring': Dictionary
+            Contains the model name and profiles used for the model. 
+
+        'par': Dictionary
+            Contains the parameters needed to successfully create the model.
+
+        'shape': tuple
+            The shape of the array to be created.
+
+        'kernel': np.ndarray
+            Array representation of the PSF. Will be used by astropy.convolve
+            to convolve with the model.
+
+        'convolve': Boolean
+            If set to true the model cube will be convolved with the kernel.
+
+    Returns
+    -------
+    Model : np.ndarray
+        Array of size kwargs['shape'] with the model that was generated from
+        the parameters in kwargs['par'].
+
+    """
+    # get the polar coordinates in the plane of the sky
+    RPrime, PhiPrime = __get_coordinates__(twoD=True, rotate=False, **kwargs)
+
+    # the intensity and dispersion profile
+    if 'IIdx' in kwargs['par'].keys():
+        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                (RPrime, kwargs['par']['Rd'], kwargs['par']['IIdx']) *
+                kwargs['par']['I0'])
+    else:
+        IMap = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+                (RPrime, kwargs['par']['Rd']) * kwargs['par']['I0'])
+    DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
+            (RPrime, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+    if 'VIdx' in kwargs['par'].keys():
+        VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
+                     '_')(R, kwargs['par']['Rv'], kwargs['par']
+                          ['VIdx']) * kwargs['par']['Vmax'])
+    else:
+        VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] +
+                     '_')(R, kwargs['par']['Rv']) *
+                kwargs['par']['Vmax'])
+    VMap = __get_centralvelocity__(PhiPrime, VDep, **kwargs)
+
+    # convert these maps into 3d matrices
+    ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
+    DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
+    VCube = np.tile(VMap, (kwargs['shape'][-3], 1, 1))
+
+    # create velocity array (in pixel units)
+    ZCube = np.indices(kwargs['shape'])[0]
+
+    # create the model
+    Model = (ICube * np.exp(-1 * (ZCube - VCube)**2 / (2 * DCube**2)))
+
+    # Convolve
+    if kwargs['convolve']:
+        Model = convolve(Model, kwargs['kernel'])
+
+    return Model
+
+
 def warped_disk(**kwargs):
 
     # get coordinates in the plane of the sky (prime) and disk (non-prime).
