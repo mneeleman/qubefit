@@ -469,7 +469,7 @@ def RotatingBulge(**kwargs):
 
     """
     # get the polar coordinates in the plane of the sky
-    RPrime, PhiPrime = __get_coordinates__(twoD=True, rotate=False, **kwargs)
+     RPrime, PhiPrime, R, Phi = __get_coordinates__(twoD=True, **kwargs)
 
     # the intensity and dispersion profile
     if 'IIdx' in kwargs['par'].keys():
