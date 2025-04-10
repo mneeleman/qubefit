@@ -1115,11 +1115,13 @@ class Qube(object):
         """Fix for KCWI."""
         self.instr = 'KCWI'
         # add RESTFRQ keyword to the header
-        restfreq = const.c.value / (self.header['RESTWAV'] * 1E-10)
-        self.header.set('RESTFRQ', restfreq)
+        if 'RESTFRQ' not in self.header:
+            restfreq = const.c.value / (self.header['RESTWAV'] * 1E-10)
+            self.header.set('RESTFRQ', restfreq)
         #  add CDELT3 keyword and convert values to frequency
-        cdelt3 = self.header['CD3_3']
-        self.header.set('CDELT3', cdelt3)
+        if 'CD3_3' in self.header:
+            cdelt3 = self.header['CD3_3']
+            self.header.set('CDELT3', cdelt3)
         # add some 'fake' beam parameters these should be first
         # updated to the seeing values of the data.
         self.header.set('BMAJ', 1.0 / 3600.)
@@ -1130,11 +1132,13 @@ class Qube(object):
         """Fix for Palomar CWI."""
         self.instr = 'PCWI_IDL'
         # add RESTFRQ keyword to the header
-        restfreq = const.c.value / (self.header['RESTWAV'] * 1E-10)
-        self.header.set('RESTFRQ', restfreq)
+        if 'RESTFRQ' not in self.header:
+            restfreq = const.c.value / (self.header['RESTWAV'] * 1E-10)
+            self.header.set('RESTFRQ', restfreq)
         #  add CDELT3 keyword and convert values to frequency
-        cdelt3 = self.header['CD3_3']
-        self.header.set('CDELT3', cdelt3)
+        if 'CD3_3' in self.header:
+            cdelt3 = self.header['CD3_3']
+            self.header.set('CDELT3', cdelt3)
         # add some 'fake' beam parameters these should be first
         # updated to the seeing values of the data.
         self.header.set('BMAJ', 1.0 / 3600.)
@@ -1145,8 +1149,9 @@ class Qube(object):
         """Fix for MUSE."""
         self.instr = 'MUSE_PIPE'
         # add RESTFRQ keyword to the header
-        restfreq = const.c.value / (self.header['RESTWAV'] * 1E-10)
-        self.header.set('RESTFRQ', restfreq)
+        if 'RESTFRQ' not in self.header:
+            restfreq = const.c.value / (self.header['RESTWAV'] * 1E-10)
+            self.header.set('RESTFRQ', restfreq)
         #  add CDELT3 keyword and convert values to frequency
         if 'CD3_3' in self.header:
             cdelt3 = self.header['CD3_3']
@@ -1173,8 +1178,9 @@ class Qube(object):
         """Fix for JWST"""
         self.instr = 'JWST_PIPE'
         # add RESTFRQ keyword to the header
-        restfreq = const.c.value / (self.header['CRVAL3'] * 1E-6)
-        self.header.set('RESTFRQ', restfreq)
+        if 'RESTFRQ' not in self.header:
+            restfreq = const.c.value / (self.header['CRVAL3'] * 1E-6)
+            self.header.set('RESTFRQ', restfreq)
         # add some 'fake' beam parameters these should be updated to the seeing values of the data.
         self.header.set('BMAJ', 0.2 / 3600.)
         self.header.set('BMIN', 0.2 / 3600.)
