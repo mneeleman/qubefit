@@ -246,10 +246,11 @@ class QubeFit(Qube):
             else:
                 self.par[key] = self.initpar[key]['Value']
             if not self.initpar[key]['Fixed']:
-                self.mcmcpar.append(self.par[key])
-                self.mcmcmap.append(key)
-                self.priordist.append(eval(self.initpar[key]['Dist'])(loc=self.initpar[key]['Dloc'],
-                                                                      scale=self.initpar[key]['Dscale']))
+                if self.par[key] not in self.mcmcmpar:
+                    self.mcmcpar.append(self.par[key])
+                    self.mcmcmap.append(key)
+                    self.priordist.append(eval(self.initpar[key]['Dist'])(loc=self.initpar[key]['Dloc'],
+                                                                          scale=self.initpar[key]['Dscale']))
         # store the number of free variables of the mcmc process
         self.mcmcdim = len(self.mcmcpar)
 

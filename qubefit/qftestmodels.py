@@ -16,7 +16,8 @@ def load_testcube():
                   'BMIN': np.full(20, 1.0),
                   'BPA': np.zeros(20),
                   'CHAN': np.arange(20),
-                  'POL': np.zeros(20)}
+                  'POL': np.zeros(20),
+                  'BAREA_PIX': np.full(20, 6.128)}
 
     # the header
     header = fits.Header()
@@ -36,6 +37,43 @@ def load_testcube():
     TCube.header = header
 
     return TCube
+
+
+def kwargs_thindisk():
+
+    kwargs = {'Xcen': {'Value': 20.0, 'Unit': u.pix, 'Fixed': False,
+                       'Conversion': None,
+                       'Dist': 'uniform', 'Dloc': 20, 'Dscale': 20},
+              'Ycen': {'Value': 25.0, 'Unit': u.pix, 'Fixed': False,
+                       'Conversion': None,
+                       'Dist': 'uniform', 'Dloc': 10, 'Dscale': 20},
+              'Incl': {'Value': 30.0, 'Unit': u.deg, 'Fixed': False,
+                       'Conversion': (180 * u.deg) / (np.pi * u.rad),
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 90},
+              'PA': {'Value': 45.0, 'Unit': u.deg, 'Fixed': False,
+                     'Conversion': (180 * u.deg) / (np.pi * u.rad),
+                     'Dist': 'uniform', 'Dloc': 0, 'Dscale': 360},
+              'I0': {'Value': 8.0E-3, 'Unit': u.Jy / u.beam, 'Fixed': False,
+                     'Conversion': None,
+                     'Dist': 'uniform', 'Dloc': 0, 'Dscale': 1E-1},
+              'Rd': {'Value': 1.0, 'Unit': u.kpc, 'Fixed': False,
+                     'Conversion': (0.2 * u.kpc) / (1 * u.pix),
+                     'Dist': 'uniform', 'Dloc': 0, 'Dscale': 5},
+              'Rv': {'Value': 1.0, 'Unit': u.kpc, 'Fixed': True,  # not used
+                     'Conversion': (0.2 * u.kpc) / (1 * u.pix),
+                     'Dist': 'uniform', 'Dloc': 0, 'Dscale': 5},
+              'Vmax': {'Value': 150.0, 'Unit': u.km / u.s, 'Fixed': False,
+                       'Conversion': (37.86 * u.km / u.s) / (1 * u.pix),
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 1000},
+              'Vcen': {'Value': 7.0, 'Unit': u.pix, 'Fixed': False,
+                       'Conversion': None,
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 20},
+              'Disp': {'Value': 40.0, 'Unit': u.km / u.s, 'Fixed': False,
+                       'Conversion': (37.86 * u.km / u.s) / (1 * u.pix),
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 200}
+              }
+
+    return kwargs
 
 
 def kwargs_dispersionsphere():
@@ -162,6 +200,24 @@ def kwargs_spiralgalaxy():
               }
 
     return kwargs
+
+
+def test_thindisk():
+
+    Tcube = load_testcube()
+
+    # create the gaussian kernel
+    Tcube.create_gaussiankernel(channels=[10])
+
+    # load the parameters
+    Tcube.load_initialparameters(kwargs_thindisk())
+
+    # create the model
+    Tcube.modelname = 'ThinDisk'
+    Tcube.create_model()
+
+    return Tcube
+
 
 
 def test_dispersionsphere():

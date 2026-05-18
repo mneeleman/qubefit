@@ -545,7 +545,6 @@ class Qube(object):
         if channels is not None:
             data = data.get_slice(zindex=channels)
         if mask is None:
-            print(data.data.shape)
             mask = np.ones_like(data.data[0, :, :])
         # the guesses:
         if return_amp:
