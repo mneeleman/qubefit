@@ -164,13 +164,14 @@ class QubeFit(Qube):
         bmin = self.beam['BMIN'] / np.sqrt(8 * np.log(2)) / np.abs(self.header['CDELT1'])
         theta = np.pi / 2. + np.radians(self.beam['BPA'])
         kernel_area = self.beam['BAREA_PIX']
-        if type(bmaj) is float:
-            raise NotImplementedError("Beam should be an array")
+        if type(bmaj) is float or type(bmaj) is np.float64:
+            bmaj = [bmaj]
+            bmin = [bmin]
         # 2D and 3D images are handled seperately
         if len(bmaj) == 1:  # 2D Image
-            xsize = 2 * np.ceil(kernelsize * bmaj) + 1
-            ysize = 2 * np.ceil(kernelsize * bmaj) + 1
-            kernel = Gaussian2DKernel(bmaj, bmin, theta=theta, x_size=xsize, y_size=ysize).array
+            xsize = 2 * np.ceil(kernelsize * bmaj[0]) + 1
+            ysize = 2 * np.ceil(kernelsize * bmaj[0]) + 1
+            kernel = Gaussian2DKernel(bmaj[0], bmin[0], theta=theta, x_size=xsize, y_size=ysize).array
         else:               # 3D Image
             if channels is None:
                 channels = [len(bmaj) // 2]
@@ -735,7 +736,7 @@ class QubeFit(Qube):
                           'please use get_slice to select the channel and try again')
         self.load_initialparameters(initpar)
         self.create_gaussiankernel(lsf_sigma=None, kernelsize=4)
-        self.kernel = self.kernel[0, :]
+        self.kernel = self.kernel
         if rms is None:
             self.variance = np.full_like(self.data, self.calculate_sigma() ** 2)
         else:

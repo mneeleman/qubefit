@@ -40,6 +40,8 @@ class ApplicationWindow(QtWidgets.QWidget):
         self.ccolor = 'black'
         if not hasattr(self.qube, 'maskarray'):
             self.maskarray = np.ones_like(self.qube.data)
+        else:
+             self.maskarray = self.qube.maskarray
         self.chisquared = self.qube.calculate_chisquared()
 
     def initUI(self):
@@ -322,12 +324,12 @@ class ApplicationWindow(QtWidgets.QWidget):
     def update_model(self):
         for idx, key in enumerate(self.qube.initpar):
             self.update_parametervalue(key, idx)
-            self.qube.load_initialparameters(self.qube.initpar)
-            self.qube.create_model()
-            self.update_figures()
-            self.chisquared = self.qube.calculate_chisquared()
-            self.chisq.setText('Red. Chi-Squared: ' +
-                               '{:10.7f}'.format(self.chisquared))
+        self.qube.load_initialparameters(self.qube.initpar)
+        self.qube.create_model()
+        self.update_figures()
+        self.chisquared = self.qube.calculate_chisquared()
+        self.chisq.setText('Red. Chi-Squared: ' +
+                           '{:10.7f}'.format(self.chisquared))
 
     def update_parametervalue(self, key, idx):
         try:
@@ -388,10 +390,8 @@ class ApplicationWindow(QtWidgets.QWidget):
             data = self.qube.data - self.qube.model
         else:
             data = None
-
         if self.mask.isChecked() and data is not None:
-            data = data * self.qube.maskarray
-
+            data = data * self.maskarray
         return data
 
 
