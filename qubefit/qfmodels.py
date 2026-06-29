@@ -544,6 +544,119 @@ def warped_disk(**kwargs):
     return model
 
 
+def ThinBarSpiral(**kwargs):
+    """
+    Create a model of a thin barred spiral disk.
+
+    Parameters
+    ----------
+    **kwargs : Dictionary
+        The kwargs dictionary contains all of the information to run the
+        fitting procedure. It consists out of several nested dictionaries.
+        The first level consists out the keys: {'mstring', 'mcmcmap', 'par',
+        'shape', 'data', 'kernel', 'variance', 'maskarray', 'initpar',
+        'probmethod', 'kernelarea', 'convolve'}. The kwargs dictionary should
+        be generated directly from a fully populated qubefit instance using
+        the function kwargs = self.__define_kwargs__(). This extra step is
+        necessary for the input structure of emcee. To create the model, the
+        important keys are:
+
+        'mstring': Dictionary
+            Contains the model name and profiles used for the model. That is
+            the 'modelname', 'intensityprofile', 'velocityprofile', and
+            'dispersionprofile'. The first is a string with the model name,
+            the latter three are list of strings with the name of the profiles
+            in each of the three dimensions, e.g., ['Exponential', None,
+            'Exponential'].
+
+        'par': Dictionary
+            Contains the parameters needed to successfully create the model.
+            These are given in the online documentation, but in short they are
+            'Xcen', 'Ycen', 'PA', 'Incl', 'Rd', 'I0', 'Rv', 'Vmax', 'Vcen',
+            and 'Disp'. Each should be given in intrinsic units. In addition,
+            some profiles (e.g., Sersic and Power) require an additional
+            parameter, which is given by the optional parameters:
+            'IIdx', 'VIdx', and 'DIdx'.
+            The spiral pattern is described by an additonal six parameters,
+            'NSpiral', 'Phi0', 'Spcoef', 'Dphi', 'Ispf', and 'Rs'
+            The bar pattern is modeled with a single parameter that defines the 
+            radius where the spiral pattern has a constant angle. 'Rb'
+        'shape': tuple
+            The shape of the array to be created.
+
+        'kernel': np.ndarray
+            Array representation of the PSF. Will be used by astropy.convolve
+            to convolve with the model.
+
+        'convolve': Boolean
+            If set to true the model cube will be convolved with the kernel.
+
+    Returns
+    -------
+    Model : np.ndarray
+        Array of size kwargs['shape'] with the model that was generated from
+        the parameters in kwargs['par'].
+
+    """
+    # get the polar coordinates in the plane of the sky (prime) and
+    # in the plane of the disk (non-prime).
+    RPrime, PhiPrime, R, Phi = __get_coordinates__(twoD=True, **kwargs)
+
+    # get the radial, velocity, and dispersion maps (these are 2D in
+    # the plane of the sky)
+    # note that VMap is based on the "sky angle" (Phi)
+    if 'IIdx' in kwargs['par'].keys():
+        IM1 = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+               (R, kwargs['par']['Rd'], kwargs['par']['IIdx']))
+    else:
+        IM1 = (eval('_' + kwargs['mstring']['intensityprofile'][0] + '_')
+               (R, kwargs['par']['Rd']))
+
+    #  spiral arm density profile
+    IM2 = 0
+    for idx in np.arange(kwargs['par']['Nspiral']):
+        # find the starting phi at R=0
+        CPhi0 = (kwargs['par']['Phi0'] +
+                 (2 * np.pi) / kwargs['par']['Nspiral'] * idx)
+        CPhi = CPhi0 + kwargs['par']['Spcoef'] * R
+        # add bar
+        CPhi = np.where(R < kwargs['par']['Rb'], CPhi0, CPhi)
+        CPhi = np.mod(CPhi, 2 * np.pi)
+        # CPhi[np.where(CPhi > np.pi)] -= 2 * np.pi
+        IM2 += np.exp(-0.5 * (Phi - CPhi)**2 / kwargs['par']['Dphi']**2)
+
+    IM2 *= kwargs['par']['Ispf']
+    IM2 *= eval('_Step_')(R, kwargs['par']['Rs'])
+
+    # add the disk and the spiral arm structure
+    IMap = IM1 + IM2
+    IMap *= kwargs['par']['I0']
+
+    # velocity and dispersion maps
+    VDep = (eval('_' + kwargs['mstring']['velocityprofile'][0] + '_')
+            (R, kwargs['par']['Rv']) * kwargs['par']['Vmax'])
+    VMap = __get_centralvelocity__(Phi, VDep, **kwargs)
+    DMap = (eval('_' + kwargs['mstring']['dispersionprofile'][0] + '_')
+            (R, kwargs['par']['Rv']) * kwargs['par']['Disp'])
+
+    # convert these maps into 3d matrices
+    ICube = np.tile(IMap, (kwargs['shape'][-3], 1, 1))
+    VCube = np.tile(VMap, (kwargs['shape'][-3], 1, 1))
+    DCube = np.tile(DMap, (kwargs['shape'][-3], 1, 1))
+
+    # create velocity array (in pixel units)
+    ZCube = np.indices(kwargs['shape'])[0]
+
+    # create the model
+    Model = (ICube * np.exp(-1 * (ZCube - VCube)**2 / (2 * DCube**2)))
+
+    # Convolve
+    if kwargs['convolve']:
+        Model = convolve(Model, kwargs['kernel'])
+
+    return Model
+
+
 def _ThickDisk(**kwargs):
     """
     Create a model of a thick disk.
