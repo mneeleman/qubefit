@@ -190,7 +190,7 @@ class QubeFit(Qube):
                     lsf_kernel = Gaussian1DKernel(lsf_sigma).array
                     temp_kernel = np.zeros(lsf_kernel.shape + twod_kernel.shape)
                     temp_kernel[lsf_kernel.shape[0] // 2, :, :] = twod_kernel
-                    threed_kernel = convolve(temp_kernel, lsf_kernel[np.newaxis, np.newaxis, ...])
+                    threed_kernel = convolve(temp_kernel, lsf_kernel[..., np.newaxis, np.newaxis])
                     kernel.append(threed_kernel)
             # select the kernel areas
             kernel_area = [kernel_area[ii] for ii in channels]
