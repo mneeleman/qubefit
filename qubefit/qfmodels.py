@@ -11,6 +11,7 @@ from astropy.coordinates import CartesianRepresentation
 from astropy.coordinates import CylindricalRepresentation
 from astropy.coordinates import SphericalRepresentation
 import astropy.units as u
+import astropy.constants as const
 from astropy.convolution import convolve
 import copy
 from scipy.special import gammaincinv
@@ -990,6 +991,11 @@ def _ExpConst_(X, X0, *args):
 def _Custom_(X, X0, *args):
 
     return (np.power((X / X0), -0.5) * 0.3888 + 1.)
+
+def _Custom2_(X, X0, N, *args):
+    r = (X / X0)
+    return np.sqrt(1 / r + N * ((2 - (r ** 2 + 2 * r + 2) * np.exp(-1 * r)) / r))
+
 ##############################################################
 
 
