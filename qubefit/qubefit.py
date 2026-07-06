@@ -218,7 +218,7 @@ class QubeFit(Qube):
         contains the value of the parameters converted into intrinsic units.
         mcmcpar and mcmcmap are the values and names of the parameters not
         held fixed during the fitting procedure and mcmcdim are the number of
-        free parameters. Finally priordist is the prior distribution of each
+        free parameters. Finally, priordist is the prior distribution of each
         parameter that is not held fixed (see scipy.stats).
 
         Parameters
@@ -246,7 +246,7 @@ class QubeFit(Qube):
             else:
                 self.par[key] = self.initpar[key]['Value']
             if not self.initpar[key]['Fixed']:
-                if self.par[key] not in self.mcmcpar:
+                if key not in self.mcmcmap:
                     self.mcmcpar.append(self.par[key])
                     self.mcmcmap.append(key)
                     self.priordist.append(eval(self.initpar[key]['Dist'])(loc=self.initpar[key]['Dloc'],
