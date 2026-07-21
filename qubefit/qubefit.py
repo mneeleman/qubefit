@@ -677,10 +677,10 @@ class QubeFit(Qube):
                    'Dist': 'uniform', 'Dloc': 123, 'Dscale': 10},
              'A': {'Value': 3E-3, 'Fixed': False, 'Conversion': None, 'Unit': u.Jy,
                    'Dist': 'uniform', 'Dloc': 0, 'Dscale': 1E-1},
-             'sig_x': {'Value': 8, 'Fixed': False, 'Conversion': None, 'Unit': u.pix,
+             'r': {'Value': 8, 'Fixed': False, 'Conversion': None, 'Unit': u.pix,
                        'Dist': 'uniform', 'Dloc': 0, 'Dscale': 50},
-             'sig_y': {'Value': 4, 'Fixed': False, 'Conversion': None, 'Unit': u.pix,
-                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 50},
+             'e': {'Value': 0.5, 'Fixed': False, 'Conversion': None, 'Unit': u.dimensionless_scaled,
+                       'Dist': 'uniform', 'Dloc': 0, 'Dscale': 1},
              'theta': {'Value': 90, 'Fixed': False,
                        'Conversion': (180 * u.deg) / (np.pi * u.rad), 'Unit': u.deg,
                        'Dist': 'uniform', 'Dloc': 0, 'Dscale': 180}}
@@ -1061,7 +1061,7 @@ def __get_2dposterior__(mcmc_pars, **kwargs):
 def __gaussian2d__(**kwargs):
     idx = np.indices(kwargs['data'].shape)
     a, x, y = kwargs['par']['A'], kwargs['par']['x'], kwargs['par']['y']
-    sig_x, sig_y, theta = kwargs['par']['sig_x'], kwargs['par']['sig_y'], kwargs['par']['theta']
+    sig_x, sig_y, theta = kwargs['par']['r'], (1 - kwargs['par']['e']) * kwargs['par']['r'], kwargs['par']['theta']
     return convolve(Gaussian2D(a, x, y, sig_x, sig_y, theta)(idx[1], idx[0]), kwargs['kernel'])
 
 
