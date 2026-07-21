@@ -1061,7 +1061,9 @@ def __get_2dposterior__(mcmc_pars, **kwargs):
 def __gaussian2d__(**kwargs):
     idx = np.indices(kwargs['data'].shape)
     a, x, y = kwargs['par']['A'], kwargs['par']['x'], kwargs['par']['y']
-    sig_x, sig_y, theta = kwargs['par']['r'], (1 - kwargs['par']['e']) * kwargs['par']['r'], kwargs['par']['theta']
+    cf = np.sqrt(2 * np.log(2))
+    sig_x, sig_y = kwargs['par']['r'] / cf, (1 - kwargs['par']['e']) * kwargs['par']['r'] / cf
+    theta = kwargs['par']['theta']
     return convolve(Gaussian2D(a, x, y, sig_x, sig_y, theta)(idx[1], idx[0]), kwargs['kernel'])
 
 
