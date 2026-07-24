@@ -1206,7 +1206,7 @@ class Qube(object):
 
     def __add_beam__(self, hdu):
         """Add the beam data attribute (different for CASA)."""
-        if 'CASAMBM' in self.header and self.header['CASAMBM'] == 'T':
+        if 'CASAMBM' in self.header and self.header['CASAMBM']:
             self.beam = {'BMAJ': hdu[1].data['BMAJ'] / 3600,
                          'BMIN': hdu[1].data['BMIN'] / 3600,
                          'BPA': hdu[1].data['BPA'],
